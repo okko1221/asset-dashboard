@@ -134,7 +134,7 @@
       const us1 = benchAt(benchmarks && benchmarks.spy, months[i]);
       const interest = loanCost ? loanCost.monthly : 0;
       out.push({
-        month: months[i] + (spanned ? '（含前月）' : ''), pnl: Math.round(pnl), ret: r,
+        month: months[i] + (spanned ? '（含前月）' : ''), pnl: Math.round(pnl), ret: r, base: Math.round(base),
         totalDelta: Math.round(b.total - a.total), total: Math.round(b.total),
         tw: tw0 && tw1 ? tw1 / tw0 - 1 : null,
         us: us0 && us1 ? us1 / us0 - 1 : null,
@@ -294,6 +294,41 @@
     });
   }
 
+  // ---- 個股損益貢獻（部位歷史：同檔連續兩筆數量相同 → 價差×數量×匯率；期貨直接比現值）----
+  // posHistory 列：[日期str, 類別(股/期), 項目, 現價/現值, 市值, 數量]
+  function contribution(posHistory, overview, cutoffDay) {
+    const fx = {};
+    (overview.positions || []).forEach((p) => { fx[p[1]] = +p[7] || 1; });
+    const byItem = {};
+    (posHistory || []).forEach((r) => {
+      if (cutoffDay && String(r[0]) < cutoffDay) return;
+      (byItem[r[2]] = byItem[r[2]] || []).push({ d: String(r[0]), kind: r[1], price: +r[3] || 0, qty: +r[5] || 0 });
+    });
+    const out = [];
+    Object.keys(byItem).forEach((item) => {
+      const s = byItem[item].sort((a, b) => (a.d < b.d ? -1 : 1));
+      let pnl = 0;
+      for (let i = 1; i < s.length; i++) {
+        if (s[i].qty === s[i - 1].qty && s[i - 1].price > 0) { // 數量變了那天不算（進出場日交給對帳單）
+          const diff = s[i].price - s[i - 1].price;
+          pnl += s[i].kind === '期' ? diff : diff * s[i].qty * (fx[item] || 1);
+        }
+      }
+      out.push({ item, kind: s[0].kind, pnl: Math.round(pnl) });
+    });
+    return out.sort((a, b) => b.pnl - a.pnl);
+  }
+
+  // ---- 全買 0050 對照：每月「同樣的平均部位規模 × 0050 月報酬」累積 NT$ vs 實際累積損益 ----
+  function vs0050(perf) {
+    let mine = 0, tw = 0;
+    return perf.map((m) => {
+      mine += m.pnl || 0;
+      if (m.tw != null && m.base) tw += m.base * m.tw;
+      return { month: m.month, mine: Math.round(mine), tw: Math.round(tw) };
+    });
+  }
+
   // ---- 支出與儲蓄 ----
   // daily 欄序：日期/類別/金額/備註/是否大筆/付款方式/來源
   function expenseMonthly(daily) {
@@ -319,7 +354,8 @@
   }
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
-    dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows };
+    dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
+    contribution, vs0050 };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);

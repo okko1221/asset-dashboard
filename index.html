@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>資產儀表板</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16263d">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="資產">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
 <style>
   :root {
@@ -102,6 +108,9 @@
   <h2>持股明細 <small id="holdNote"></small></h2>
   <div class="panel" id="tblHold"></div>
 
+  <h2>損益貢獻 <small id="contribNote">誰幫你賺最多、賠最多（依每日部位快照累積）</small></h2>
+  <div class="panel" id="pnlContrib"><div class="chartbox"><canvas id="chContrib"></canvas></div></div>
+
   <h2>期貨</h2>
   <div class="grid2">
     <div class="panel" id="futRisk"></div>
@@ -121,6 +130,7 @@
   <h2>月度績效 <small>投資報酬 vs 0050 vs SPY</small></h2>
   <div class="panel"><div class="chartbox"><canvas id="chMonthly"></canvas></div></div>
   <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chCum"></canvas></div></div>
+  <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chVs"></canvas></div><div class="note">同樣的部位規模，實際操作 vs 無腦全買 0050 的累積損益（NT$，月度）</div></div>
   <div class="panel" style="margin-top:10px" id="tblMonthly"></div>
 
   <h2>個股歷史績效 <small>從交易紀錄自動統計（含已出清）</small></h2>
@@ -134,5 +144,6 @@
 <footer>資料來源：你自己的 Google Sheet ｜ 開源專案，無伺服器、無追蹤</footer>
 <script src="engine.js"></script>
 <script src="app.js"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');</script>
 </body>
 </html>

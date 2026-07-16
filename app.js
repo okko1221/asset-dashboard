@@ -102,6 +102,27 @@ const App = (() => {
         num(h.pl), pct(h.plPct),
       ]));
 
+    // ---- 損益貢獻（近30天，資料自部位歷史累積）----
+    const cutoff = new Date(Date.now() - 30 * 86400000);
+    const cutoffDay = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+    const contrib = Engine.contribution(b.pos_history, b.overview, cutoffDay);
+    const histDays = [...new Set((b.pos_history || []).map(r => String(r[0])))];
+    if (histDays.length < 2) {
+      $('pnlContrib').innerHTML = `<div class="note">資料累積中——每天早上 6:00 存一次部位快照，明天起這裡會顯示每檔的損益貢獻排行（目前 ${histDays.length} 天）。</div>`;
+    } else {
+      $('contribNote').textContent = `近30天，資料自 ${histDays[0]} 起`;
+      mkChart('chContrib', {
+        type: 'bar',
+        data: { labels: contrib.map(c => c.item), datasets: [{
+          label: '損益貢獻',
+          data: contrib.map(c => c.pnl),
+          backgroundColor: contrib.map(c => c.pnl >= 0 ? '#e05b5b' : '#3ba272'),
+          borderRadius: 4,
+        }]},
+        options: { indexAxis: 'y', plugins: { legend: { display: false } } },
+      });
+    }
+
     // ---- 期貨 ----
     if (fr) {
       const scaleMax = Math.max(250, Math.ceil(fr.risk * 100 + 30));
@@ -195,6 +216,15 @@ const App = (() => {
         { label: 'SPY 累積', data: perf.map(m => m.cumUs * 100), borderColor: '#3d8fd6', pointRadius: 0, tension: .2, borderWidth: 2 },
       ]},
       options: { scales: { y: { title: { display: true, text: '%' } } } },
+    });
+    const cf = Engine.vs0050(perf);
+    mkChart('chVs', {
+      type: 'line',
+      data: { labels: cf.map(m => m.month), datasets: [
+        { label: '我的累積損益', data: cf.map(m => m.mine), borderColor: GOLD, backgroundColor: 'rgba(201,162,39,.10)', fill: true, pointRadius: 2, tension: .2, borderWidth: 2 },
+        { label: '全買 0050', data: cf.map(m => m.tw), borderColor: CREAM, pointRadius: 2, tension: .2, borderWidth: 2, borderDash: [6, 4] },
+      ]},
+      options: { scales: { y: { ticks: { callback: (v) => (v / 10000) + '萬' } } } },
     });
     $('tblMonthly').innerHTML = table(
       ['月份', '損益', '報酬率', '0050', 'SPY', 'α(0050)', '利息', '扣息後', '總資產'],

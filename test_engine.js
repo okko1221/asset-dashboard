@@ -56,7 +56,17 @@ const frow = E.futuresRows(b.futures, b.yesterday);
 assert.strictEqual(frow.length, b.futures.positions.length);
 assert.ok(frow.every(r => Math.abs(r.value - r.cost - r.pl) < 1), '現值-成本=損益');
 
+// 損益貢獻 + 0050 對照
+const ct = E.contribution(b.pos_history, b.overview, '2000-01-01');
+assert.ok(Array.isArray(ct) && ct.every(x => isFinite(x.pnl)), '貢獻值有限');
+assert.ok(ct.every((x, i) => i === 0 || x.pnl <= ct[i - 1].pnl), '貢獻由大到小');
+const cf = E.vs0050(E.monthlyPerf(b.history, b.benchmarks, lc));
+assert.strictEqual(cf.length, E.monthlyPerf(b.history, b.benchmarks, lc).length);
+assert.ok(cf.every(m => isFinite(m.mine) && isFinite(m.tw)), '對照曲線數值');
+assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmarks, lc).reduce((s, m) => s + m.pnl, 0)) < 2, '累積=月損益總和');
+
 console.log('✅ all checks pass');
+console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);
 console.log('   融資餘額(A8):', lc.marginBal, '| 月息:', lc.monthly);
 console.log('   現金:', Math.round(ci.cash), '| 月支出中位:', ci.monthlySpend, '| 可撐:', ci.months.toFixed(1), '月');
 console.log('   風險指標:', (fr.risk * 100).toFixed(0) + '%', '| 距警戒125%:', Math.round(fr.toWarn), '| 保證金使用率:', (fr.marginUtil * 100).toFixed(0) + '%');
