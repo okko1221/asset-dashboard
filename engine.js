@@ -246,7 +246,10 @@
         .concat(banks.map((b) => ({ name: b[0], v: +b[1] || 0, at: b[2] })));
     }
     const cash = accounts.reduce((s, a) => s + a.v, 0);
-    const spends = (flow || []).filter((r) => r[0] && +r[11]).map((r) => +r[11]).slice(-6).sort((a, b) => a - b);
+    // 月度總覽列 [月份,收入,總支出,...]；進行中的當月支出未滿不列入中位數
+    const nowYm = ym(new Date());
+    const spends = (flow || []).filter((r) => r[0] && +r[2] && String(r[0]) !== nowYm)
+      .map((r) => +r[2]).slice(-6).sort((a, b) => a - b);
     const n = spends.length;
     const spend = n ? (spends[Math.floor((n - 1) / 2)] + spends[Math.ceil((n - 1) / 2)]) / 2 : 0;
     return { cash, accounts, monthlySpend: spend, months: spend > 0 ? cash / spend : null };
@@ -350,11 +353,11 @@
     return months; // {2026-07: {吃: 1234, 日常: 567, ...}}
   }
 
-  // monthly_flow 欄序：金流月份/薪資收入/../當月總支出(L=idx11)
+  // monthly_flow（月度總覽）欄序：[月份, 收入, 總支出, 其中大筆, 日常, 結餘]
   function savingsRate(flow) {
-    return (flow || []).filter((r) => r[0] && +r[1]).map((r) => ({
-      month: String(r[0]), salary: +r[1] || 0, spend: +r[11] || 0,
-      rate: +r[1] ? 1 - (+r[11] || 0) / +r[1] : null,
+    return (flow || []).filter((r) => r[0] && (+r[1] || +r[2])).map((r) => ({
+      month: String(r[0]), salary: +r[1] || 0, spend: +r[2] || 0, big: +r[3] || 0,
+      rate: +r[1] ? 1 - (+r[2] || 0) / +r[1] : null,
     }));
   }
 

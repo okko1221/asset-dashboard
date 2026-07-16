@@ -254,8 +254,9 @@ const App = (() => {
       options: { scales: { x: { stacked: true }, y: { stacked: true } } },
     });
     $('tblSavings').innerHTML = table(
-      ['結算月', '薪資', '當月總支出', '結餘'],
-      sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), num(r.salary - r.spend)]));
+      ['月份', '收入', '總支出', '其中大筆', '結餘', '儲蓄率'],
+      sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), NT(r.big),
+        r.salary ? num(r.salary - r.spend) : '—', r.salary ? pct(r.rate) : '—']));
   }
 
   // ---- 小工具 ----
