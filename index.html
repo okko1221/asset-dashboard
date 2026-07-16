@@ -6,34 +6,75 @@
 <title>資產儀表板</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
 <style>
-  :root { --navy:#16263d; --navy2:#1f3a5f; --gold:#c9a227; --cream:#faf7f0; --up:#e05b5b; --down:#3ba272; --line:#2c4a73; }
+  :root {
+    --navy:#16263d; --navy2:#1f3a5f; --navy3:#24466f; --gold:#c9a227; --cream:#faf7f0;
+    --up:#e05b5b; --down:#3ba272; --line:#2c4a73; --mut:#8fa3bd; --sub:#b9c6d8;
+    /* 圖表分類色（深藍底驗證過：台股/美股/期貨/現金/虛擬貨幣） */
+    --c-tw:#dd5555; --c-us:#3d8fd6; --c-fut:#b3880f; --c-cash:#28a065; --c-cry:#b55cc2;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; background:var(--navy); color:var(--cream); }
-  header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--navy); z-index:5; }
-  header h1 { font-size:18px; margin:0; color:var(--gold); }
-  header .meta { font-size:12px; color:#8fa3bd; }
-  header button { background:none; border:1px solid var(--line); color:#8fa3bd; border-radius:8px; padding:4px 10px; }
+  body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; background:var(--navy); color:var(--cream);
+         font-variant-numeric:tabular-nums; }
+  header { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:12px 18px;
+           border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(22,38,61,.92); backdrop-filter:blur(6px); z-index:5; }
+  header h1 { font-size:17px; margin:0; color:var(--gold); white-space:nowrap; }
+  header .meta { font-size:11px; color:var(--mut); text-align:right; flex:1; }
+  header button { background:none; border:1px solid var(--line); color:var(--sub); border-radius:8px; padding:4px 10px; cursor:pointer; }
+  header button:hover { border-color:var(--gold); color:var(--gold); }
   .wrap { max-width:1080px; margin:0 auto; padding:16px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-  .card { background:var(--navy2); border-radius:14px; padding:14px; }
-  .card .k { font-size:12px; color:#8fa3bd; }
-  .card .v { font-size:21px; font-weight:700; margin-top:4px; }
-  .card .s { font-size:12px; margin-top:2px; color:#b9c6d8; }
-  h2 { font-size:15px; color:var(--gold); margin:26px 0 10px; border-left:3px solid var(--gold); padding-left:8px; }
-  .panel { background:var(--navy2); border-radius:14px; padding:14px; overflow-x:auto; }
-  .panel canvas { height:300px !important; width:100% !important; }
+
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; }
+  .card { background:var(--navy2); border:1px solid rgba(44,74,115,.6); border-radius:14px; padding:13px 14px; }
+  .card .k { font-size:12px; color:var(--mut); }
+  .card .v { font-size:21px; font-weight:700; margin-top:4px; letter-spacing:-.3px; }
+  .card .s { font-size:11.5px; margin-top:3px; color:var(--sub); line-height:1.45; }
+  .card.hero { grid-column:span 2; background:linear-gradient(135deg,var(--navy2),#274a78);
+               border-color:rgba(201,162,39,.35); }
+  .card.hero .v { font-size:30px; color:var(--gold); }
+  @media (max-width:420px){ .card.hero{grid-column:span 2} .cards{grid-template-columns:1fr 1fr} }
+
+  h2 { font-size:15px; color:var(--gold); margin:26px 0 10px; border-left:3px solid var(--gold); padding-left:8px; font-weight:600; }
+  h2 small { color:var(--mut); font-weight:400; font-size:11px; margin-left:6px; }
+  .panel { background:var(--navy2); border:1px solid rgba(44,74,115,.6); border-radius:14px; padding:14px; overflow-x:auto; }
+  .chartbox { position:relative; height:300px; }
+  .chartbox.short { height:250px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:stretch; }
+  @media (max-width:760px){ .grid2{grid-template-columns:1fr} }
+  .note { font-size:11px; color:var(--mut); margin-top:8px; }
+
   table { border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap; }
-  th,td { padding:7px 10px; text-align:right; border-bottom:1px solid var(--line); }
-  th { color:#8fa3bd; font-weight:500; }
+  th,td { padding:7px 10px; text-align:right; border-bottom:1px solid rgba(44,74,115,.55); }
+  tr:last-child td { border-bottom:none; }
+  th { color:var(--mut); font-weight:500; font-size:12px; }
   td:first-child, th:first-child { text-align:left; }
+  tbody tr:hover { background:rgba(36,70,111,.45); }
   .pos { color:var(--up); } .neg { color:var(--down); }
-  .tag { font-size:11px; padding:1px 7px; border-radius:9px; background:#2c4a73; color:#b9c6d8; }
+  .tag { font-size:10.5px; padding:1px 7px; border-radius:9px; background:var(--navy3); color:var(--sub); margin-left:5px; }
+
+  /* 集中度／現金 橫條列 */
+  .bars .row { display:flex; align-items:center; gap:8px; margin:7px 0; font-size:13px; }
+  .bars .name { width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bars .bar { flex:1; height:14px; background:var(--navy); border-radius:7px; overflow:hidden; }
+  .bars .bar i { display:block; height:100%; border-radius:7px; }
+  .bars .val { width:110px; text-align:right; font-size:12px; color:var(--sub); }
+
+  /* 期貨風險量表 */
+  .meter { position:relative; height:16px; border-radius:8px; overflow:hidden; display:flex; margin:10px 0 4px; }
+  .meter i { height:100%; opacity:.75; }
+  .meter .needle { position:absolute; top:-2px; bottom:-2px; width:3px; background:var(--cream); border-radius:2px;
+                   box-shadow:0 0 6px rgba(0,0,0,.6); }
+  .scalelab { position:relative; height:16px; font-size:10px; color:var(--mut); }
+  .scalelab span { position:absolute; transform:translateX(-50%); }
+  .risk-lines { font-size:13px; line-height:2; }
+  .risk-lines b { float:right; font-weight:600; }
+  .bignum { font-size:34px; font-weight:800; letter-spacing:-1px; }
+
   #gate { max-width:460px; margin:60px auto; padding:24px; background:var(--navy2); border-radius:16px; }
   #gate input { width:100%; padding:10px; margin:6px 0 14px; border-radius:8px; border:1px solid var(--line); background:var(--navy); color:var(--cream); font-size:14px; }
-  #gate button { width:100%; padding:12px; border:none; border-radius:10px; background:var(--gold); font-weight:700; font-size:15px; }
-  #gate .hint { font-size:12px; color:#8fa3bd; line-height:1.6; }
+  #gate button { width:100%; padding:12px; border:none; border-radius:10px; background:var(--gold); font-weight:700; font-size:15px; cursor:pointer; }
+  #gate .hint { font-size:12px; color:var(--mut); line-height:1.6; }
   #err { color:#ff9b9b; padding:12px 18px; display:none; white-space:pre-wrap; }
-  #loading { text-align:center; padding:50px; color:#8fa3bd; display:none; }
+  #loading { text-align:center; padding:50px; color:var(--mut); display:none; }
   footer { text-align:center; font-size:11px; color:#5c728c; padding:30px 0; }
 </style>
 </head>
@@ -41,6 +82,7 @@
 <header>
   <h1>📊 資產儀表板</h1>
   <div class="meta" id="gen"></div>
+  <button onclick="App.reload()" title="重新抓資料">↻</button>
   <button onclick="App.reconfig()">設定</button>
 </header>
 <div id="err"></div>
@@ -57,19 +99,35 @@
 <div class="wrap" id="main" style="display:none">
   <div class="cards" id="cards"></div>
 
-  <h2>資產曲線</h2>
-  <div class="panel"><canvas id="chAsset"></canvas></div>
+  <h2>持股明細 <small id="holdNote"></small></h2>
+  <div class="panel" id="tblHold"></div>
 
-  <h2>月度績效（投資報酬 vs 0050 vs SPY）</h2>
-  <div class="panel"><canvas id="chMonthly"></canvas></div>
-  <div class="panel" style="margin-top:10px"><canvas id="chCum"></canvas></div>
+  <h2>期貨</h2>
+  <div class="grid2">
+    <div class="panel" id="futRisk"></div>
+    <div class="panel" id="tblFut"></div>
+  </div>
+
+  <h2>資產配置 <small>曝險觀點：期貨以合約價值計</small></h2>
+  <div class="grid2">
+    <div class="panel"><div class="chartbox short"><canvas id="chAlloc"></canvas></div></div>
+    <div class="panel" id="pnlConc"></div>
+  </div>
+
+  <h2>資產曲線與回撤</h2>
+  <div class="panel"><div class="chartbox"><canvas id="chAsset"></canvas></div></div>
+  <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chDD"></canvas></div><div class="note" id="ddNote"></div></div>
+
+  <h2>月度績效 <small>投資報酬 vs 0050 vs SPY</small></h2>
+  <div class="panel"><div class="chartbox"><canvas id="chMonthly"></canvas></div></div>
+  <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chCum"></canvas></div></div>
   <div class="panel" style="margin-top:10px" id="tblMonthly"></div>
 
-  <h2>個股表現（自動發現所有標的）</h2>
+  <h2>個股歷史績效 <small>從交易紀錄自動統計（含已出清）</small></h2>
   <div class="panel" id="tblStocks"></div>
 
   <h2>支出與儲蓄</h2>
-  <div class="panel"><canvas id="chExpense"></canvas></div>
+  <div class="panel"><div class="chartbox"><canvas id="chExpense"></canvas></div></div>
   <div class="panel" style="margin-top:10px" id="tblSavings"></div>
 </div>
 
