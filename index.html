@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>資產儀表板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+<style>
+  :root { --navy:#16263d; --navy2:#1f3a5f; --gold:#c9a227; --cream:#faf7f0; --up:#e05b5b; --down:#3ba272; --line:#2c4a73; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif; background:var(--navy); color:var(--cream); }
+  header { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--navy); z-index:5; }
+  header h1 { font-size:18px; margin:0; color:var(--gold); }
+  header .meta { font-size:12px; color:#8fa3bd; }
+  header button { background:none; border:1px solid var(--line); color:#8fa3bd; border-radius:8px; padding:4px 10px; }
+  .wrap { max-width:1080px; margin:0 auto; padding:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .card { background:var(--navy2); border-radius:14px; padding:14px; }
+  .card .k { font-size:12px; color:#8fa3bd; }
+  .card .v { font-size:21px; font-weight:700; margin-top:4px; }
+  .card .s { font-size:12px; margin-top:2px; color:#b9c6d8; }
+  h2 { font-size:15px; color:var(--gold); margin:26px 0 10px; border-left:3px solid var(--gold); padding-left:8px; }
+  .panel { background:var(--navy2); border-radius:14px; padding:14px; overflow-x:auto; }
+  .panel canvas { height:300px !important; width:100% !important; }
+  table { border-collapse:collapse; width:100%; font-size:13px; white-space:nowrap; }
+  th,td { padding:7px 10px; text-align:right; border-bottom:1px solid var(--line); }
+  th { color:#8fa3bd; font-weight:500; }
+  td:first-child, th:first-child { text-align:left; }
+  .pos { color:var(--up); } .neg { color:var(--down); }
+  .tag { font-size:11px; padding:1px 7px; border-radius:9px; background:#2c4a73; color:#b9c6d8; }
+  #gate { max-width:460px; margin:60px auto; padding:24px; background:var(--navy2); border-radius:16px; }
+  #gate input { width:100%; padding:10px; margin:6px 0 14px; border-radius:8px; border:1px solid var(--line); background:var(--navy); color:var(--cream); font-size:14px; }
+  #gate button { width:100%; padding:12px; border:none; border-radius:10px; background:var(--gold); font-weight:700; font-size:15px; }
+  #gate .hint { font-size:12px; color:#8fa3bd; line-height:1.6; }
+  #err { color:#ff9b9b; padding:12px 18px; display:none; white-space:pre-wrap; }
+  #loading { text-align:center; padding:50px; color:#8fa3bd; display:none; }
+  footer { text-align:center; font-size:11px; color:#5c728c; padding:30px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 資產儀表板</h1>
+  <div class="meta" id="gen"></div>
+  <button onclick="App.reconfig()">設定</button>
+</header>
+<div id="err"></div>
+<div id="loading">載入中…（跟你的 Google 試算表拿資料）</div>
+
+<div id="gate" style="display:none">
+  <h2 style="margin-top:0">首次設定</h2>
+  <div class="hint">貼上你自己的 Apps Script 網址與金鑰。資料只會在「你的瀏覽器 ↔ 你的 Google」之間傳輸，這個網站沒有伺服器、不儲存任何東西（設定只存在這台裝置）。</div>
+  <p><label>Apps Script 網址（…/exec）</label><input id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec"></p>
+  <p><label>API 金鑰（token）</label><input id="cfgToken" placeholder="48 碼金鑰"></p>
+  <button onclick="App.saveConfig()">開始使用</button>
+</div>
+
+<div class="wrap" id="main" style="display:none">
+  <div class="cards" id="cards"></div>
+
+  <h2>資產曲線</h2>
+  <div class="panel"><canvas id="chAsset"></canvas></div>
+
+  <h2>月度績效（投資報酬 vs 0050 vs SPY）</h2>
+  <div class="panel"><canvas id="chMonthly"></canvas></div>
+  <div class="panel" style="margin-top:10px"><canvas id="chCum"></canvas></div>
+  <div class="panel" style="margin-top:10px" id="tblMonthly"></div>
+
+  <h2>個股表現（自動發現所有標的）</h2>
+  <div class="panel" id="tblStocks"></div>
+
+  <h2>支出與儲蓄</h2>
+  <div class="panel"><canvas id="chExpense"></canvas></div>
+  <div class="panel" style="margin-top:10px" id="tblSavings"></div>
+</div>
+
+<footer>資料來源：你自己的 Google Sheet ｜ 開源專案，無伺服器、無追蹤</footer>
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
