@@ -238,8 +238,13 @@
   }
 
   // ---- 現金水位與可撐月數（月支出取近 6 個月中位數）----
-  function cashInfo(overview, flow) {
-    const accounts = (overview.positions || []).filter((p) => p[0] === '現金').map((p) => ({ name: p[1], v: +p[9] || 0 }));
+  // banks（帳戶餘額分頁）有資料時，「各種帳戶」拆成各銀行明細（總額相同，因為資產總覽就是加總它）
+  function cashInfo(overview, flow, banks) {
+    let accounts = (overview.positions || []).filter((p) => p[0] === '現金').map((p) => ({ name: p[1], v: +p[9] || 0 }));
+    if (banks && banks.length) {
+      accounts = accounts.filter((a) => a.name !== '各種帳戶')
+        .concat(banks.map((b) => ({ name: b[0], v: +b[1] || 0, at: b[2] })));
+    }
     const cash = accounts.reduce((s, a) => s + a.v, 0);
     const spends = (flow || []).filter((r) => r[0] && +r[11]).map((r) => +r[11]).slice(-6).sort((a, b) => a - b);
     const n = spends.length;

@@ -64,7 +64,7 @@ const App = (() => {
     const dd = Engine.drawdownSeries(days, b.overview);
     const alloc = Engine.allocation(b.overview, b.futures);
     const conc = Engine.concentration(b.overview, b.futures);
-    const ci = Engine.cashInfo(b.overview, b.monthly_flow);
+    const ci = Engine.cashInfo(b.overview, b.monthly_flow, b.bank_accounts);
     const fr = Engine.futuresRisk(b.futures);
     const hold = Engine.holdings(b.overview, b.yesterday);
     const frows = Engine.futuresRows(b.futures, b.yesterday);
