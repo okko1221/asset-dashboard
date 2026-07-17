@@ -79,6 +79,13 @@
   #gate input { width:100%; padding:10px; margin:6px 0 14px; border-radius:8px; border:1px solid var(--line); background:var(--navy); color:var(--cream); font-size:14px; }
   #gate button { width:100%; padding:12px; border:none; border-radius:10px; background:var(--gold); font-weight:700; font-size:15px; cursor:pointer; }
   #gate .hint { font-size:12px; color:var(--mut); line-height:1.6; }
+  /* 小驚嘆號說明（點一下浮出，再點任意處收起） */
+  .info { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%;
+          background:rgba(201,162,39,.15); color:var(--gold); border:1px solid rgba(201,162,39,.55);
+          font-size:10.5px; font-weight:700; cursor:pointer; margin-left:5px; vertical-align:1px; user-select:none; flex:none; }
+  #tipbox { position:fixed; z-index:50; max-width:300px; background:#0f1c2e; border:1px solid rgba(201,162,39,.6); border-radius:10px;
+            padding:10px 12px; font-size:12.5px; line-height:1.75; color:var(--cream); box-shadow:0 8px 28px rgba(0,0,0,.55);
+            display:none; white-space:pre-wrap; }
   #err { color:#ff9b9b; padding:12px 18px; display:none; white-space:pre-wrap; }
   #loading { text-align:center; padding:50px; color:var(--mut); display:none; }
   footer { text-align:center; font-size:11px; color:#5c728c; padding:30px 0; }
@@ -123,14 +130,16 @@
     <div class="panel" id="pnlConc"></div>
   </div>
 
-  <h2>資產曲線與回撤</h2>
+  <h2>資產曲線與回撤<span class="info" data-tip="回撤＝投資淨值距離「歷史最高點」跌了多少%（每日報酬串接、對入金免疫，含已實現＋未實現）。它不會告訴你該買或賣——它量的是風險：現在的回撤深度，加上期貨「距警戒線可虧」的金額，合起來就是你還有多少犯錯空間。">!</span></h2>
   <div class="panel"><div class="chartbox"><canvas id="chAsset"></canvas></div></div>
   <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chDD"></canvas></div><div class="note" id="ddNote"></div></div>
 
-  <h2>月度績效 <small>投資報酬 vs 0050 vs SPY</small></h2>
+  <h2>月度績效 <small>投資報酬 vs 0050 vs SPY</small><span class="info" data-tip="月報酬＝(該月已實現＋未實現的變化) ÷ 該月平均投資市值——含已實現，入金不會灌水。
+表中「損益/報酬率」是投資損益，不是總資產增減；總資產另外受薪水、開銷影響（見表最右欄）。α(0050)＝當月贏 0050 幾個百分點。
+累積線從 2025-09（最早快照的次月）開始把每月報酬連乘：等於「當時投 1 元跟著同樣操作，現在變多少」；0050/SPY 線＝同一段時間無腦抱著。這種算法叫 TWR，只評操作，跟你投入多少錢無關。">!</span></h2>
   <div class="panel"><div class="chartbox"><canvas id="chMonthly"></canvas></div></div>
   <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chCum"></canvas></div></div>
-  <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chVs"></canvas></div><div class="note">同樣的部位規模，實際操作 vs 無腦全買 0050 的累積損益（NT$，月度）</div></div>
+  <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chVs"></canvas></div><div class="note">實際操作 vs 全買 0050 的累積損益（NT$，月度）。「全買 0050」＝你每個月實際動用的平均曝險規模（含信貸資金、期貨合約價值）如果通通放 0050——比的是同樣的膽量換成大盤會如何，不是只拿現金 all in。</div></div>
   <div class="panel" style="margin-top:10px" id="tblMonthly"></div>
 
   <h2>個股歷史績效 <small>從交易紀錄自動統計（含已出清）</small></h2>

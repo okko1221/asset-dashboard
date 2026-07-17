@@ -71,23 +71,28 @@ const App = (() => {
     const f = b.futures || {};
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
-    // ---- 總覽卡 ----
+    // ---- 總覽卡（第4欄=小驚嘆號說明文字）----
     const riskColor = fr && (fr.risk < 1.25 ? 'var(--up)' : fr.risk < 1.5 ? 'var(--gold)' : '');
     const cards = [
       ['含信貸總資產', NT(b.overview.net_inc_loan), '不含信貸 ' + NT(b.overview.net_ex_loan), '', 'hero'],
       ['今日投資損益', ty ? `<span class="${cls(ty.today)}">${sign(ty.today)}</span>` : '—',
-        ty ? `昨日 <span class="${cls(ty.yesterday)}">${sign(ty.yesterday)}</span>｜基準 ${tfmt(ty.todayBaseAt)}` : ''],
+        ty ? `昨日 <span class="${cls(ty.yesterday)}">${sign(ty.yesterday)}</span>｜基準 ${tfmt(ty.todayBaseAt)}` : '',
+        '現在的（已實現＋未實現）減掉最近一次快照的值。只算投資，薪水入帳、生活開銷不會混進來。'],
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
-      ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : ''],
+      ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
+        '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
       ['投資市值', NT(b.overview.mv), '成本 ' + NT(b.overview.cost)],
       ['期貨風險指標', fr ? `<span style="color:${riskColor}">${PCT(fr.risk, 0)}</span>` : '—',
-        fr ? `距警戒線125% 可虧 ${NT(fr.toWarn)}` : ''],
-      ['保證金使用率', fr ? PCT(fr.marginUtil, 0) : '—', fr ? `原始保證金 ${NT(f.orig_margin)}` : ''],
+        fr ? `距警戒線125% 可虧 ${NT(fr.toWarn)}` : '',
+        '權益數 ÷ 原始保證金，愈高愈安全。三條線：125% 自設警戒；權益跌破維持保證金（約77%）券商追繳；25% 強制代沖銷。'],
+      ['保證金使用率', fr ? PCT(fr.marginUtil, 0) : '—', fr ? `原始保證金 ${NT(f.orig_margin)}` : '',
+        '原始保證金 ÷ 權益數＝期貨戶裡的錢被部位「佔用」的比例，剩下的才是吸收虧損的緩衝。使用率愈高，同樣的行情波動愈快把你推向追繳。'],
       ['槓桿利息/月', NT(lc.monthly), `信貸 ${NT(lc.balA + lc.balB)}｜融資 ${NT(lc.marginBal)}`],
-      ['最大回撤', `<span class="${cls(dd.maxDD)}">${PCT(dd.maxDD)}</span>`, `目前距峰值 <span class="${cls(dd.current)}">${PCT(dd.current)}</span>`],
+      ['最大回撤', `<span class="${cls(dd.maxDD)}">${PCT(dd.maxDD)}</span>`, `目前距峰值 <span class="${cls(dd.current)}">${PCT(dd.current)}</span>`,
+        '投資淨值（含已實現＋未實現）從歷史最高點回吐的最大幅度，已剔除入金影響。這是風險刻度：這套打法最糟時你得吞得下這麼多浮虧。'],
     ];
-    $('cards').innerHTML = cards.map(([k, v, s, _, extra]) =>
-      `<div class="card ${extra || ''}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+    $('cards').innerHTML = cards.map(([k, v, s, tip, extra]) =>
+      `<div class="card ${extra || ''}"><div class="k">${k}${tip ? infoI(tip) : ''}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
     // ---- 持股明細 ----
     $('holdNote').textContent = b.yesterday ? `當日漲跌基準：${tfmt(b.yesterday.at)}` : '當日漲跌明天起提供（今晚起每日 6:00 存收盤基準）';
@@ -288,6 +293,23 @@ const App = (() => {
     return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
       rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
   }
+  // 小驚嘆號：點圖示浮出說明，點其他地方收起
+  const infoI = (tip) => `<span class="info" data-tip="${tip}">!</span>`;
+  const tipbox = document.createElement('div');
+  tipbox.id = 'tipbox';
+  document.body.appendChild(tipbox);
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('.info');
+    if (!t) { tipbox.style.display = 'none'; return; }
+    tipbox.textContent = t.dataset.tip;
+    tipbox.style.display = 'block';
+    const w = Math.min(300, innerWidth - 24);
+    tipbox.style.maxWidth = w + 'px';
+    const r = t.getBoundingClientRect();
+    tipbox.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 12)) + 'px';
+    tipbox.style.top = Math.min(r.bottom + 8, innerHeight - 60) + 'px';
+    e.stopPropagation();
+  });
   const barRow = (name, share, val, color) =>
     `<div class="row"><div class="name" title="${name}">${name}</div><div class="bar"><i style="width:${Math.min(100, share * 100).toFixed(1)}%;background:${color}"></i></div><div class="val">${val}</div></div>`;
   const num = (v) => v == null ? '—' : `<span class="${cls(v)}">${Math.round(v).toLocaleString()}</span>`;
