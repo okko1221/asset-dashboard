@@ -3,9 +3,9 @@ const assert = require('assert');
 const E = require('./engine.js');
 const b = require('./test_bundle.json');
 
-// 融資修正：餘額必須來自 A8（=0），不能是 P 欄合計的 15,300 殘差
+// 融資餘額必須來自 A8（現在是 =-SUM(交易紀錄P:P) 公式，P 欄全是對帳單實際值）
 const lc = E.loanCost(b.settings, b.overview);
-assert.strictEqual(lc.marginBal, 0, '融資餘額應取 A8=0，got ' + lc.marginBal);
+assert.strictEqual(lc.marginBal, Math.abs(+b.overview.margin_debt || 0), '融資餘額=|A8|');
 assert.ok(lc.monthly > 0 && lc.balA === 1350000 && lc.balB === 778000, '信貸餘額/月息');
 
 // 現金水位 = 四個現金帳戶市值合計
