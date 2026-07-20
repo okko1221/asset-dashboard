@@ -65,6 +65,53 @@ assert.strictEqual(cf.length, E.monthlyPerf(b.history, b.benchmarks, lc).length)
 assert.ok(cf.every(m => isFinite(m.mine) && isFinite(m.tw)), '對照曲線數值');
 assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmarks, lc).reduce((s, m) => s + m.pnl, 0)) < 2, '累積=月損益總和');
 
+// 分市場當日損益：用合成資料驗「晚上看台股、早上看美股」兩個時刻
+(function testMarketDaily() {
+  const ov = { positions: [
+    ['台股', '冠德', '2520', 7000, 36, 36.7, 'TWD', 1, 0, 0, 0],   // 現價 36.7
+    ['美股', 'SNPS', 'SNPS', 40, 445, 430, 'USD', 31, 0, 0, 0],     // 現價 430
+    ['現金', '台幣證券戶', '', 0, 1, 1, 'TWD', 1, 0, 500, 0],
+  ]};
+  const fut = { positions: [['台積8', 0, 2471, 400, 1000000, 0]] };
+  const ph = [ // [日期, 股/期, 項目, 價or現值, 市值, 數量]
+    ['2026-07-18', '股', '冠德', 36.0, 252000, 7000, '06:00'], ['2026-07-18', '股', 'SNPS', 420, 0, 40, '06:00'],
+    ['2026-07-18', '期', '台積8', 980000, 980000, 400, '06:00'],
+    ['2026-07-19', '股', '冠德', 36.2, 253400, 7000, '06:00'], ['2026-07-19', '股', 'SNPS', 425, 0, 40, '06:00'],
+    ['2026-07-19', '期', '台積8', 990000, 990000, 400, '06:00'],
+  ];
+  // 情境一：晚上 22:37 看 → 台股＝今日（現價 vs 今日06:00）、美股＝今晚進行中
+  const night = Engine.marketDaily(ov, fut, ph, new Date('2026-07-19T22:37:00+08:00'));
+  assert.strictEqual(night.tw.label, '今日');
+  assert.strictEqual(night.us.label, '今晚');
+  // 台股：冠德 (36.7-36.2)*7000 = +3500，台積8 現值 1,000,000-990,000 = +10,000
+  assert.strictEqual(night.tw.pnl, 13500, '晚上台股今日 got ' + night.tw.pnl);
+  // 美股：SNPS (430-425)*40*31 = +6,200
+  assert.strictEqual(night.us.pnl, 6200, '晚上美股今晚 got ' + night.us.pnl);
+
+  // 情境二：隔天早上 07:00 看 → 台股＝昨日結果、美股＝昨夜完整一場（今日06:00 vs 昨日06:00）
+  const morning = Engine.marketDaily(ov, fut, ph, new Date('2026-07-19T07:00:00+08:00'));
+  assert.strictEqual(morning.tw.label, '昨日');
+  assert.strictEqual(morning.us.label, '昨夜');
+  // 昨夜美股：(425-420)*40*31 = +6,200；昨日台股：(36.2-36)*7000 + (990000-980000) = +11,400
+  assert.strictEqual(morning.us.pnl, 6200, '早上昨夜美股 got ' + morning.us.pnl);
+  assert.strictEqual(morning.tw.pnl, 11400, '早上昨日台股 got ' + morning.tw.pnl);
+
+  // 只有一天資料時，需要前一日的那格要回 null 而不是壞掉
+  const oneDay = Engine.marketDaily(ov, fut, ph.slice(3), new Date('2026-07-19T07:00:00+08:00'));
+  assert.strictEqual(oneDay.hasPrev, false);
+  assert.strictEqual(oneDay.us, null);
+
+  // 數量變動的標的要被標記（提醒使用者當日進出的已實現損益不在裡面）
+  const ph2 = ph.concat([['2026-07-19', '股', 'TSMX', 70, 0, 100, '06:00']]);
+  const ov2 = { positions: ov.positions.concat([['美股', 'TSMX', 'TSMX', 50, 90, 72, 'USD', 31, 0, 0, 0]]) };
+  const withSell = Engine.marketDaily(ov2, fut, ph2, new Date('2026-07-19T22:37:00+08:00'));
+  assert.ok(withSell.us.changed.includes('TSMX'), '數量變動應列入 changed');
+  assert.strictEqual(night.tw.baseTime, '06:00', '基準時間要跟著資料走，不能寫死');
+  const noTime = Engine.marketDaily(ov, fut, ph.map(r => r.slice(0, 6)), new Date('2026-07-19T22:37:00+08:00'));
+  assert.strictEqual(noTime.tw.baseTime, '', '沒記錄時間就留空，不假裝是 06:00');
+  console.log('   分市場：晚上台股', night.tw.pnl, '/ 美股今晚', night.us.pnl, '｜早上昨夜美股', morning.us.pnl);
+})();
+
 console.log('✅ all checks pass');
 console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);
 console.log('   融資餘額(A8):', lc.marginBal, '| 月息:', lc.monthly);

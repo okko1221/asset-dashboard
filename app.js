@@ -60,7 +60,6 @@ const App = (() => {
     const expM = Engine.expenseMonthly(b.daily);
     const sav = Engine.savingsRate(b.monthly_flow);
     const days = Engine.dailySeries(b.history);
-    const ty = Engine.todayYesterday(b.overview, days);
     const dd = Engine.drawdownSeries(days, b.overview);
     const alloc = Engine.allocation(b.overview, b.futures);
     const conc = Engine.concentration(b.overview, b.futures);
@@ -69,15 +68,17 @@ const App = (() => {
     const hold = Engine.holdings(b.overview, b.yesterday);
     const frows = Engine.futuresRows(b.futures, b.yesterday);
     const f = b.futures || {};
+    const md = Engine.marketDaily(b.overview, b.futures, b.pos_history);
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
     // ---- 總覽卡（第4欄=小驚嘆號說明文字）----
     const riskColor = fr && (fr.risk < 1.25 ? 'var(--up)' : fr.risk < 1.5 ? 'var(--gold)' : '');
     const cards = [
       ['含信貸總資產', NT(b.overview.net_inc_loan), '不含信貸 ' + NT(b.overview.net_ex_loan), '', 'hero'],
-      ['今日投資損益', ty ? `<span class="${cls(ty.today)}">${sign(ty.today)}</span>` : '—',
-        ty ? `昨日 <span class="${cls(ty.yesterday)}">${sign(ty.yesterday)}</span>｜基準 ${tfmt(ty.todayBaseAt)}` : '',
-        '現在的（已實現＋未實現）減掉最近一次快照的值。只算投資，薪水入帳、生活開銷不會混進來。'],
+      ['台股' + (md.tw ? md.tw.label : '今日'), mdCell(md.tw), mdSub(md, md.tw, '台股 09:00–13:30'),
+        '基準＝當日 06:00 部位快照（台股還沒開盤，等於昨天的收盤價）。所以收盤後、晚上看信時，這個數字就是今天台股一整天的結果。含台股個股與股票期貨（期貨有夜盤，會一路算到隔天清晨）。算的是持倉的市場波動，當天買賣造成的已實現損益不含在內。'],
+      ['美股' + (md.us ? md.us.label : ''), mdCell(md.us), mdSub(md, md.us, '美股 21:30–04:00'),
+        '美股開盤中（21:30 後）顯示「今晚」＝現價 vs 今日 06:00；美股收盤後顯示「昨夜」＝今日 06:00 vs 昨日 06:00，也就是完整一場美股的結果——早上起床看到的就是這個。美元部位已用匯率換算成台幣。'],
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
       ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
         '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
@@ -293,6 +294,17 @@ const App = (() => {
     return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
       rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
   }
+  // 分市場損益卡：沒有基準資料時老實說「累積中」，不要顯示假的 0
+  const mdCell = (m) => (!m || !m.counted) ? '<span style="font-size:15px;color:#8fa3bd">累積中</span>'
+    : `<span class="${cls(m.pnl)}">${sign(m.pnl)}</span>`;
+  const mdSub = (md, m, hours) => {
+    if (!m || !m.counted) return '每日 06:00 存基準，明早起可用';
+    const bits = [`基準 ${m.base}<span style="color:#5c728c"> ${m.baseTime || '(時間未記錄)'}</span>`];
+    if (m.live) bits.push('<span style="color:#c9a227">盤中</span>');
+    if (m.changed && m.changed.length) bits.push(`${m.changed.join('、')} 今日有進出，未計入`);
+    return bits.join('｜') + `<br><span style="color:#5c728c">${hours}</span>`;
+  };
+
   // 小驚嘆號：點圖示浮出說明，點其他地方收起
   const infoI = (tip) => `<span class="info" data-tip="${tip}">!</span>`;
   const tipbox = document.createElement('div');

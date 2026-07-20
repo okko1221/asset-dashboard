@@ -195,6 +195,68 @@
     };
   }
 
+  // ---- 分市場當日損益 ----
+  // 台股 09:00-13:30、美股 21:30-04:00（台北時間）完全不重疊，混成單一「今日損益」必然切斷其中一邊。
+  // 基準一律取當日 06:00 部位快照：該時刻台股未開、美股已收，是全天唯一同時乾淨的起點。
+  //   台股：現價 vs 今日06:00 → 收盤後看到的就是今天整天
+  //   美股：盤中 → 現價 vs 今日06:00（今晚進行中）；收盤後 → 今日06:00 vs 昨日06:00（昨夜完整一場）
+  // 用「基準日持有量×價差」算純市場波動，不含當日進出的已實現損益（qty 有變動的標的會列進 changed）。
+  const TW_TYPES = new Set(['台股', '台股ETF']);
+  const US_TYPES = new Set(['美股', '美股ETF']);
+  function marketDaily(overview, futures, posHistory, now) {
+    now = now || new Date();
+    const byDay = {}, atTime = {};
+    (posHistory || []).forEach((r) => {
+      const d = String(r[0]);
+      (byDay[d] = byDay[d] || {})[r[2]] = { price: +r[3] || 0, qty: +r[5] || 0 };
+      if (r[6]) atTime[d] = String(r[6]); // 基準實際存檔時間，沒有就不顯示（別假裝是 06:00）
+    });
+    const days = Object.keys(byDay).sort();
+    const today = days[days.length - 1] || null;
+    const prev = days.length > 1 ? days[days.length - 2] : null;
+
+    const cur = {};
+    (overview.positions || []).forEach((p) => {
+      if (p[0] === '現金' || p[0] === '期貨部位') return;
+      const b = TW_TYPES.has(p[0]) ? 'TW' : US_TYPES.has(p[0]) ? 'US' : 'OTHER';
+      cur[p[1]] = { bucket: b, price: +p[5] || 0, qty: +p[3] || 0, fx: +p[7] || 1, isFut: false };
+    });
+    (((futures || {}).positions) || []).forEach((f) => { // 期貨存的是「現值」不是單價，且屬台股市場
+      cur[f[0]] = { bucket: 'TW', price: +f[4] || 0, qty: +f[3] || 0, fx: 1, isFut: true };
+    });
+
+    // baseDay→(cmpDay 或現價) 的市場波動
+    function delta(baseDay, cmpDay, bucket) {
+      if (!baseDay) return null;
+      let pnl = 0;
+      const changed = [];
+      let counted = 0, skipped = 0;
+      Object.keys(cur).forEach((item) => {
+        const c = cur[item];
+        if (c.bucket !== bucket) return;
+        const base = (byDay[baseDay] || {})[item];
+        const tgt = cmpDay ? (byDay[cmpDay] || {})[item] : c;
+        if (!base || !tgt) { skipped++; return; }
+        if (base.qty !== tgt.qty) changed.push(item);
+        pnl += c.isFut ? (tgt.price - base.price) : (tgt.price - base.price) * base.qty * c.fx;
+        counted++;
+      });
+      return { pnl: Math.round(pnl), changed, counted, skipped };
+    }
+
+    const h = now.getHours() + now.getMinutes() / 60;
+    const usLive = h >= 21.5 || h < 5;      // 美股盤中（夏令 21:30-04:00，冬令順延一小時）
+    const twStarted = h >= 9;               // 台股已開盤 → 比的是今天；之前則顯示昨日結果
+    const tw = twStarted ? delta(today, null, 'TW') : delta(prev, today, 'TW');
+    const us = usLive ? delta(today, null, 'US') : delta(prev, today, 'US');
+    const tag = (o, label, live, base) => o && Object.assign(o, { label, live, base, baseTime: atTime[base] || '' });
+    return {
+      baseDay: today, prevDay: prev, hasPrev: !!prev,
+      tw: tag(tw, twStarted ? '今日' : '昨日', twStarted && h < 13.5, twStarted ? today : prev),
+      us: tag(us, usLive ? '今晚' : '昨夜', usLive, usLive ? today : prev),
+    };
+  }
+
   // ---- 回撤：日報酬串成 TWR 指數，距歷史峰值（對入金免疫）----
   function drawdownSeries(days, overview) {
     const pts = days.map((d) => ({ day: d.day, pnl: d.realized + d.unreal, mv: d.mv }));
@@ -363,7 +425,7 @@
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
-    contribution, vs0050 };
+    contribution, vs0050, marketDaily };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);
