@@ -135,6 +135,21 @@ assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmark
   console.log('   分市場：晚上台股', night.tw.pnl, '/ 美股今晚', night.us.pnl, '｜早上昨夜美股', morning.us.pnl);
 })();
 
+// 年度績效
+const yp = E.yearlyPerf(E.parseTrades(b.trades));
+assert.ok(yp.length >= 3, '年度筆數: ' + yp.length);
+assert.ok(yp.every((y, i) => i === 0 || y.year > yp[i-1].year), '年份遞增');
+yp.forEach(y => {
+  assert.strictEqual(y.trades, y.wins + y.losses, y.year + ' 交易次數=勝+敗');
+  assert.ok(y.winRate >= 0 && y.winRate <= 1, y.year + ' 勝率範圍');
+  if (y.profitFactor != null) assert.ok(y.profitFactor >= 0, y.year + ' 獲利因子非負');  // 整年只賠會是 0
+  assert.ok(Math.abs(y.gross - y.loss - y.pnl) < 1, y.year + ' 總獲利-總虧損=淨損益');
+  assert.ok(y.top.length <= 3 && y.bottom.length <= 3, y.year + ' 前三大');
+});
+const sumY = yp.reduce((s, y) => s + y.pnl, 0);
+console.log('   年度績效:', yp.map(y => y.year + ' ' + Math.round(y.pnl).toLocaleString()).join(' | '));
+console.log('   合計', Math.round(sumY).toLocaleString());
+
 console.log('✅ all checks pass');
 console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);
 console.log('   融資餘額(A8):', lc.marginBal, '| 月息:', lc.monthly);

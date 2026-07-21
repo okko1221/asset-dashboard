@@ -399,6 +399,46 @@
     });
   }
 
+  // ---- 年度績效 ----
+  // 專業機構的年報通常看四件事：報酬、風險、一致性、歸因。
+  // 這裡只用「交易紀錄算得出來」的版本（每日快照 2025-08 才開始，早年算不出 TWR）：
+  //   報酬 → 年度已實現損益（不是報酬率，因為早年沒有每日部位可當分母）
+  //   一致性 → 勝率、獲利因子（總獲利÷總虧損，>1.5 算穩健）、最大單筆賺賠
+  //   歸因 → 依類型（台股/美股/期貨）與前三大貢獻／拖累
+  function yearlyPerf(trades) {
+    const years = {};
+    const bucket = (t) => t.ttype === '期貨損益' ? '期貨' : (t.type || '其他');
+    trades.forEach((t) => {
+      if (t.realized == null || !t.realized) return;
+      const y = String(t.date.getFullYear());
+      const Y = (years[y] = years[y] || {
+        year: y, pnl: 0, wins: 0, losses: 0, gross: 0, loss: 0,
+        best: null, worst: null, byType: {}, byItem: {},
+      });
+      const v = t.realized;
+      Y.pnl += v;
+      if (v > 0) { Y.wins++; Y.gross += v; } else { Y.losses++; Y.loss += -v; }
+      if (!Y.best || v > Y.best.v) Y.best = { item: t.item, v };
+      if (!Y.worst || v < Y.worst.v) Y.worst = { item: t.item, v };
+      const b = bucket(t);
+      Y.byType[b] = (Y.byType[b] || 0) + v;
+      Y.byItem[t.item] = (Y.byItem[t.item] || 0) + v;
+    });
+    return Object.values(years).sort((a, b) => a.year.localeCompare(b.year)).map((Y) => {
+      const items = Object.keys(Y.byItem).sort((a, b) => Y.byItem[b] - Y.byItem[a]);
+      return Object.assign(Y, {
+        trades: Y.wins + Y.losses,
+        winRate: (Y.wins + Y.losses) ? Y.wins / (Y.wins + Y.losses) : null,
+        // 獲利因子＝總獲利÷總虧損。1.0 是打平，機構常用 >1.5 當穩健門檻
+        profitFactor: Y.loss > 0 ? Y.gross / Y.loss : null,
+        avgWin: Y.wins ? Y.gross / Y.wins : 0,
+        avgLoss: Y.losses ? Y.loss / Y.losses : 0,
+        top: items.slice(0, 3).map((k) => ({ item: k, v: Y.byItem[k] })),
+        bottom: items.slice(-3).reverse().map((k) => ({ item: k, v: Y.byItem[k] })),
+      });
+    });
+  }
+
   // ---- 支出與儲蓄 ----
   // daily 欄序：日期/類別/金額/備註/是否大筆/付款方式/來源
   function expenseMonthly(daily) {
@@ -425,7 +465,7 @@
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
-    contribution, vs0050, marketDaily };
+    contribution, vs0050, marketDaily, yearlyPerf };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);

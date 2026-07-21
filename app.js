@@ -84,8 +84,8 @@ const App = (() => {
         '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
       ['投資市值', NT(b.overview.mv), '成本 ' + NT(b.overview.cost)],
       ['期貨風險指標', fr ? `<span style="color:${riskColor}">${PCT(fr.risk, 0)}</span>` : '—',
-        fr ? `距警戒線125% 可虧 ${NT(fr.toWarn)}` : '',
-        '權益數 ÷ 原始保證金，愈高愈安全。三條線：125% 自設警戒；權益跌破維持保證金（約77%）券商追繳；25% 強制代沖銷。'],
+        fr ? `距警戒線125% 可虧 ${NT(fr.toWarn)}${f.margin_asof ? `<br><span style="color:#5c728c">保證金為 ${f.margin_asof} 的值</span>` : ''}` : '',
+        '權益數 ÷ 原始保證金，愈高愈安全。三條線：125% 自設警戒；權益跌破維持保證金（約77%）券商追繳；25% 強制代沖銷。\n\n注意：分子（權益數）是即時的，分母（保證金）是期交所訂的、只有對帳單來才會更新。沒交易的日子保證金會過期，這時風險指標會偏樂觀——副標有標示保證金的日期，差太多就用 ?run=setmargin 從 App 抄一次。'],
       ['保證金使用率', fr ? PCT(fr.marginUtil, 0) : '—', fr ? `原始保證金 ${NT(f.orig_margin)}` : '',
         '原始保證金 ÷ 權益數＝期貨戶裡的錢被部位「佔用」的比例，剩下的才是吸收虧損的緩衝。使用率愈高，同樣的行情波動愈快把你推向追繳。'],
       ['槓桿利息/月', NT(lc.monthly), `信貸 ${NT(lc.balA + lc.balB)}｜融資 ${NT(lc.marginBal)}`],
@@ -240,15 +240,45 @@ const App = (() => {
         NT(m.interest), pct(m.netRet), NT(m.total),
       ]));
 
-    // ---- 個股歷史績效 ----
-    $('tblStocks').innerHTML = table(
-      ['標的', '類型', '狀態', '已實現', '未實現', '合計', '年化XIRR', '勝-敗', '持有天數'],
-      stocks.map(s => [
-        s.item, `<span class="tag" style="margin-left:0">${s.type}</span>`, s.open ? '持倉中' : '已出清',
-        num(s.realized), s.open ? num(s.unrealized) : '—', num(s.total),
-        s.type === '期貨' ? '—' : xirrTxt(s.xirr),
-        `${s.wins}-${s.losses}`, s.days,
+    // ---- 年度績效 ----
+    const yrs = Engine.yearlyPerf(trades);
+    $('tblYearly').innerHTML = table(
+      ['年度', '已實現損益', '交易次數', '勝率', '獲利因子', '平均賺', '平均賠', '最佳', '最差'],
+      yrs.slice().reverse().map(y => [
+        `<b>${y.year}</b>`, num(y.pnl), y.trades, pct(y.winRate),
+        y.profitFactor == null ? '—'
+          : `<span class="${y.profitFactor >= 1.5 ? 'pos' : y.profitFactor >= 1 ? '' : 'neg'}">${y.profitFactor.toFixed(2)}</span>`,
+        NT(y.avgWin), NT(-y.avgLoss),
+        y.best ? `${y.best.item} ${sign(y.best.v)}` : '—',
+        y.worst ? `${y.worst.item} ${sign(y.worst.v)}` : '—',
       ]));
+    $('yearDetail').innerHTML = yrs.slice().reverse().map(y => {
+      const kinds = Object.keys(y.byType).sort((a, b) => y.byType[b] - y.byType[a]);
+      return `<div style="padding:9px 0;border-bottom:1px solid rgba(44,74,115,.5)">
+        <b>${y.year}</b> <span class="${cls(y.pnl)}">${sign(y.pnl)}</span>
+        <span style="color:var(--mut);font-size:12px">　${kinds.map(k => `${k} ${sign(y.byType[k])}`).join('　')}</span>
+        <div style="font-size:12.5px;color:var(--sub);margin-top:3px">
+          最賺 ${y.top.map(x => `${x.item} ${sign(x.v)}`).join('、') || '—'}
+          ／ 最賠 ${y.bottom.map(x => `${x.item} ${sign(x.v)}`).join('、') || '—'}</div></div>`;
+    }).join('');
+
+    // ---- 個股歷史績效（只顯示前十大賺賠，其餘收合）----
+    const stockRow = s => [
+      s.item, `<span class="tag" style="margin-left:0">${s.type}</span>`, s.open ? '持倉中' : '已出清',
+      num(s.realized), s.open ? num(s.unrealized) : '—', num(s.total),
+      s.type === '期貨' ? '—' : xirrTxt(s.xirr), `${s.wins}-${s.losses}`, s.days,
+    ];
+    const HEAD = ['標的', '類型', '狀態', '已實現', '未實現', '合計', '年化XIRR', '勝-敗', '持有天數'];
+    const top10 = stocks.slice(0, 10), bot10 = stocks.slice(-10).reverse();
+    const midCount = Math.max(0, stocks.length - 20);
+    $('tblStocks').innerHTML =
+      `<div class="note" style="margin:0 0 6px">共 ${stocks.length} 檔　賺最多前 10</div>` +
+      table(HEAD, top10.map(stockRow)) +
+      (midCount ? `<div style="margin:12px 0 6px"><button class="toggle" onclick="App.toggleStocks()">
+         ▾ 展開中間 ${midCount} 檔</button></div>
+         <div id="stocksMid" style="display:none">${table(HEAD, stocks.slice(10, -10).map(stockRow))}</div>` : '') +
+      `<div class="note" style="margin:14px 0 6px">賠最多前 10</div>` +
+      table(HEAD, bot10.map(stockRow));
 
     // ---- 支出 ----
     const months = Object.keys(expM).sort();
@@ -329,5 +359,12 @@ const App = (() => {
   const xirrTxt = (r) => r == null ? '—' : Math.abs(r) > 9.99 ? `<span class="${cls(r)}">${r > 0 ? '>' : '<-'}999%</span>` : `<span class="${cls(r)}">${(r * 100).toFixed(0)}%</span>`;
 
   load();
-  return { saveConfig, reconfig, reload: load };
+  function toggleStocks() {
+    const el = $('stocksMid'), btn = document.querySelector('.toggle');
+    const open = el.style.display === 'none';
+    el.style.display = open ? 'block' : 'none';
+    btn.textContent = (open ? '▴ 收合中間 ' : '▾ 展開中間 ') + el.querySelectorAll('tbody tr').length + ' 檔';
+  }
+
+  return { saveConfig, reconfig, reload: load, toggleStocks };
 })();

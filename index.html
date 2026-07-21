@@ -75,6 +75,9 @@
   .risk-lines b { float:right; font-weight:600; }
   .bignum { font-size:34px; font-weight:800; letter-spacing:-1px; }
 
+  .toggle { background:none; border:1px solid var(--line); color:var(--sub); border-radius:8px;
+            padding:5px 12px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+  .toggle:hover { border-color:var(--gold); color:var(--gold); }
   #gate { max-width:460px; margin:60px auto; padding:24px; background:var(--navy2); border-radius:16px; }
   #gate input { width:100%; padding:10px; margin:6px 0 14px; border-radius:8px; border:1px solid var(--line); background:var(--navy); color:var(--cream); font-size:14px; }
   #gate button { width:100%; padding:12px; border:none; border-radius:10px; background:var(--gold); font-weight:700; font-size:15px; cursor:pointer; }
@@ -141,6 +144,14 @@
   <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chCum"></canvas></div></div>
   <div class="panel" style="margin-top:10px"><div class="chartbox"><canvas id="chVs"></canvas></div><div class="note">實際操作 vs 全買 0050 的累積損益（NT$，月度）。「全買 0050」＝你每個月實際動用的平均曝險規模（含信貸資金、期貨合約價值）如果通通放 0050——比的是同樣的膽量換成大盤會如何，不是只拿現金 all in。</div></div>
   <div class="panel" style="margin-top:10px" id="tblMonthly"></div>
+
+  <h2>年度績效<span class="info" data-tip="機構年報看四件事：報酬、風險、一致性、歸因。這裡是「交易紀錄算得出來」的版本——因為每日快照 2025-08 才開始，早年沒有每日部位可當分母，所以看的是年度已實現損益而非報酬率。
+
+勝率＝賺錢的平倉次數 ÷ 總平倉次數。
+獲利因子＝總獲利 ÷ 總虧損，1.0 是打平，機構常用 1.5 當穩健門檻——它比勝率誠實，因為「常常小賺、偶爾大賠」勝率會很漂亮但獲利因子會低於 1。
+平均賺／賠比也是同樣的道理：勝率低但賺賠比高，長期仍可獲利。">!</span></h2>
+  <div class="panel" id="tblYearly"></div>
+  <div class="panel" style="margin-top:10px" id="yearDetail"></div>
 
   <h2>個股歷史績效 <small>從交易紀錄自動統計（含已出清）</small></h2>
   <div class="panel" id="tblStocks"></div>
