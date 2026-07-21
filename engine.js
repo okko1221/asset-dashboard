@@ -399,6 +399,71 @@
     });
   }
 
+  // ---- 槓桿倍數 ----
+  // 曝險部位 ÷ 淨資產。含信貸看的是「銀行眼中的我」，不含信貸看的是「真正屬於我的錢被放大幾倍」。
+  function leverage(overview) {
+    const exp = +overview.mv || 0;
+    const inc = +overview.net_inc_loan || 0;
+    const ex = +overview.net_ex_loan || 0;
+    return { exposure: exp, incLoan: inc, exLoan: ex,
+      xInc: inc > 0 ? exp / inc : null, xEx: ex > 0 ? exp / ex : null };
+  }
+
+  // ---- 期間報告（半年報／年報）----
+  // 有了每日快照才算得出來的專業指標：
+  //   TWR      時間加權報酬率——把每天的報酬連乘，入金出金不影響，這是評「操作」的標準做法
+  //   年化波動  日報酬標準差 × √252，衡量顛簸程度
+  //   Sharpe   (年化報酬 − 無風險利率) ÷ 年化波動，每承受一單位風險換到多少超額報酬
+  //   最大回撤  期間內從高點回吐最多多少
+  //   Calmar   年化報酬 ÷ |最大回撤|，另一種風險調整後報酬
+  //   勝率     上漲天數比例
+  function periodReport(history, benchmarks, from, to, riskFree) {
+    riskFree = riskFree == null ? 0.015 : riskFree;   // 台幣定存約 1.5%
+    const days = dailySeries(history).filter((d) => (!from || d.day >= from) && (!to || d.day <= to));
+    if (days.length < 3) return null;
+    const rets = [];
+    for (let i = 1; i < days.length; i++) {
+      const base = (days[i - 1].mv + days[i].mv) / 2;
+      const pnl = (days[i].realized - days[i - 1].realized) + (days[i].unreal - days[i - 1].unreal);
+      rets.push({ day: days[i].day, r: base > 0 ? pnl / base : 0, pnl });
+    }
+    let idx = 1, peak = 1, maxDD = 0;
+    rets.forEach((x) => {
+      idx *= 1 + x.r;
+      peak = Math.max(peak, idx);
+      maxDD = Math.min(maxDD, idx / peak - 1);
+    });
+    const twr = idx - 1;
+    const yrs = Math.max(1 / 365, (new Date(days[days.length - 1].day) - new Date(days[0].day)) / 31557600000);
+    const ann = Math.pow(1 + twr, 1 / yrs) - 1;
+    const mean = rets.reduce((s, x) => s + x.r, 0) / rets.length;
+    const sd = Math.sqrt(rets.reduce((s, x) => s + (x.r - mean) ** 2, 0) / Math.max(1, rets.length - 1));
+    const vol = sd * Math.sqrt(252);
+    const bench = (series) => {   // 同期間的指數報酬
+      const pts = (series || []).filter((r) => r[0] && r[1])
+        .map((r) => ({ d: D(r[0]), v: +r[1] })).sort((a, b) => a.d - b.d)
+        .filter((p) => ymdLocal(p.d) >= days[0].day && ymdLocal(p.d) <= days[days.length - 1].day);
+      return pts.length >= 2 ? pts[pts.length - 1].v / pts[0].v - 1 : null;
+    };
+    const tw = bench(benchmarks && benchmarks.taiex), us = bench(benchmarks && benchmarks.spy);
+    // 快照密度：早期不是每天都有，會讓「日報酬」其實橫跨數日 → 波動與 Sharpe 會失真，要標示出來
+    const calDays = Math.round((new Date(days[days.length - 1].day) - new Date(days[0].day)) / 86400000) + 1;
+    return {
+      from: days[0].day, to: days[days.length - 1].day, days: days.length, years: yrs,
+      coverage: calDays > 0 ? days.length / calDays : null, calDays,
+      pnl: Math.round((days[days.length - 1].realized + days[days.length - 1].unreal) -
+        (days[0].realized + days[0].unreal)),
+      twr, annualized: ann, vol,
+      sharpe: vol > 0 ? (ann - riskFree) / vol : null,
+      maxDD, calmar: maxDD < 0 ? ann / Math.abs(maxDD) : null,
+      winDays: rets.filter((x) => x.r > 0).length, totalDays: rets.length,
+      dayWinRate: rets.length ? rets.filter((x) => x.r > 0).length / rets.length : null,
+      best: rets.reduce((a, b) => (!a || b.r > a.r ? b : a), null),
+      worst: rets.reduce((a, b) => (!a || b.r < a.r ? b : a), null),
+      tw, us, alphaTw: tw == null ? null : twr - tw, alphaUs: us == null ? null : twr - us,
+    };
+  }
+
   // ---- 年度績效 ----
   // 專業機構的年報通常看四件事：報酬、風險、一致性、歸因。
   // 這裡只用「交易紀錄算得出來」的版本（每日快照 2025-08 才開始，早年算不出 TWR）：
@@ -465,7 +530,7 @@
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
-    contribution, vs0050, marketDaily, yearlyPerf };
+    contribution, vs0050, marketDaily, yearlyPerf, leverage, periodReport };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);

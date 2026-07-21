@@ -69,6 +69,7 @@ const App = (() => {
     const frows = Engine.futuresRows(b.futures, b.yesterday);
     const f = b.futures || {};
     const md = Engine.marketDaily(b.overview, b.futures, b.pos_history);
+    const lv = Engine.leverage(b.overview);
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
     // ---- 總覽卡（第4欄=小驚嘆號說明文字）----
@@ -88,6 +89,12 @@ const App = (() => {
         '權益數 ÷ 原始保證金，愈高愈安全。三條線：125% 自設警戒；權益跌破維持保證金（約77%）券商追繳；25% 強制代沖銷。\n\n注意：分子（權益數）是即時的，分母（保證金）是期交所訂的、只有對帳單來才會更新。沒交易的日子保證金會過期，這時風險指標會偏樂觀——副標有標示保證金的日期，差太多就用 ?run=setmargin 從 App 抄一次。'],
       ['保證金使用率', fr ? PCT(fr.marginUtil, 0) : '—', fr ? `原始保證金 ${NT(f.orig_margin)}` : '',
         '原始保證金 ÷ 權益數＝期貨戶裡的錢被部位「佔用」的比例，剩下的才是吸收虧損的緩衝。使用率愈高，同樣的行情波動愈快把你推向追繳。'],
+      ['槓桿倍數', lv.xEx == null ? '—' : lv.xEx.toFixed(2) + '<span style="font-size:13px">x</span>',
+        `曝險 ${NT(lv.exposure)}<br>含信貸 ${lv.xInc == null ? '—' : lv.xInc.toFixed(2)}x`,
+        '曝險部位 ÷ 淨資產。\n\n「不含信貸」＝真正屬於你的錢被放大幾倍（現在 ' +
+        (lv.xEx == null ? '—' : lv.xEx.toFixed(2)) + 'x）——這才是你自己承擔的風險倍數。\n' +
+        '「含信貸」＝把借來的錢也當自有資金看（銀行的角度）。\n\n' +
+        '曝險部位用投資市值計，期貨以合約價值計入市值。'],
       ['槓桿利息/月', NT(lc.monthly), `信貸 ${NT(lc.balA + lc.balB)}｜融資 ${NT(lc.marginBal)}`],
       ['最大回撤', `<span class="${cls(dd.maxDD)}">${PCT(dd.maxDD)}</span>`, `目前距峰值 <span class="${cls(dd.current)}">${PCT(dd.current)}</span>`,
         '投資淨值（含已實現＋未實現）從歷史最高點回吐的最大幅度，已剔除入金影響。這是風險刻度：這套打法最糟時你得吞得下這麼多浮虧。'],
@@ -240,6 +247,20 @@ const App = (() => {
         NT(m.interest), pct(m.netRet), NT(m.total),
       ]));
 
+    // ---- 期間報告（半年報／年報）----
+    const thisYear = new Date().getFullYear();
+    const PERIODS = [
+      ['今年至今', `${thisYear}-01-01`, `${thisYear}-12-31`],
+      ['上半年', `${thisYear}-01-01`, `${thisYear}-06-30`],
+      ['下半年', `${thisYear}-07-01`, `${thisYear}-12-31`],
+      ['近一年', ymd(new Date(Date.now() - 365 * 86400000)), `${thisYear}-12-31`],
+      ['全部', '2000-01-01', '2099-12-31'],
+    ];
+    window.__rep = { history: b.history, bench: b.benchmarks };
+    $('periodPick').innerHTML = PERIODS.map(([n, f, t], i) =>
+      `<button class="toggle ${i === 0 ? 'on' : ''}" data-i="${i}" onclick="App.pickPeriod(${i},'${f}','${t}','${n}')">${n}</button>`).join(' ');
+    renderPeriod(PERIODS[0][1], PERIODS[0][2], PERIODS[0][0]);
+
     // ---- 年度績效 ----
     const yrs = Engine.yearlyPerf(trades);
     $('tblYearly').innerHTML = table(
@@ -324,6 +345,42 @@ const App = (() => {
     return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
       rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
   }
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  function renderPeriod(from, to, name) {
+    const s = window.__rep;
+    const r = Engine.periodReport(s.history, s.bench, from, to);
+    if (!r) { $('periodReport').innerHTML = '<div class="note">這段期間的快照不足 3 天，算不出來。</div>'; return; }
+    const cell = (k, v, tip) => `<div><div class="k">${k}</div><div class="v">${v}</div>${tip ? `<div class="s">${tip}</div>` : ''}</div>`;
+    const lowCov = r.coverage != null && r.coverage < 0.8;
+    $('periodReport').innerHTML = `
+      <div style="font-size:13px;color:var(--sub);margin-bottom:10px">
+        <b style="color:var(--gold)">${name}</b>　${r.from} ~ ${r.to}　
+        <span style="color:var(--mut)">${r.days} 個快照 / ${r.calDays} 天</span>
+        ${lowCov ? `<span class="neg">　⚠️ 涵蓋度 ${PCT(r.coverage, 0)}，波動與 Sharpe 會偏高</span>` : ''}
+      </div>
+      <div class="repgrid">
+        ${cell('期間損益', `<span class="${cls(r.pnl)}">${sign(r.pnl)}</span>`, '已實現＋未實現變化')}
+        ${cell('TWR 報酬率', `<span class="${cls(r.twr)}">${PCT(r.twr)}</span>`, `年化 ${PCT(r.annualized)}`)}
+        ${cell('vs 0050', r.alphaTw == null ? '—' : `<span class="${cls(r.alphaTw)}">${PCT(r.alphaTw)}</span>`,
+          r.tw == null ? '' : `0050 ${PCT(r.tw)}`)}
+        ${cell('vs SPY', r.alphaUs == null ? '—' : `<span class="${cls(r.alphaUs)}">${PCT(r.alphaUs)}</span>`,
+          r.us == null ? '' : `SPY ${PCT(r.us)}`)}
+        ${cell('年化波動', PCT(r.vol, 0), lowCov ? '快照不足，偏高' : '日報酬標準差×√252')}
+        ${cell('Sharpe', r.sharpe == null ? '—' : r.sharpe.toFixed(2), '每單位風險的超額報酬')}
+        ${cell('期間最大回撤', `<span class="${cls(r.maxDD)}">${PCT(r.maxDD)}</span>`,
+          r.calmar == null ? '' : `Calmar ${r.calmar.toFixed(2)}`)}
+        ${cell('上漲天數', `${r.winDays}/${r.totalDays}`, PCT(r.dayWinRate, 0) + ' 的日子是賺的')}
+        ${cell('最好的一天', r.best ? `<span class="pos">${PCT(r.best.r)}</span>` : '—', r.best ? r.best.day : '')}
+        ${cell('最差的一天', r.worst ? `<span class="neg">${PCT(r.worst.r)}</span>` : '—', r.worst ? r.worst.day : '')}
+      </div>`;
+  }
+
+  function pickPeriod(i, f, t, n) {
+    document.querySelectorAll('#periodPick .toggle').forEach(b => b.classList.toggle('on', +b.dataset.i === i));
+    renderPeriod(f, t, n);
+  }
+
   // 分市場損益卡：沒有基準資料時老實說「累積中」，不要顯示假的 0
   const mdCell = (m) => (!m || !m.counted) ? '<span style="font-size:15px;color:#8fa3bd">累積中</span>'
     : `<span class="${cls(m.pnl)}">${sign(m.pnl)}</span>`;
@@ -366,5 +423,5 @@ const App = (() => {
     btn.textContent = (open ? '▴ 收合中間 ' : '▾ 展開中間 ') + el.querySelectorAll('tbody tr').length + ' 檔';
   }
 
-  return { saveConfig, reconfig, reload: load, toggleStocks };
+  return { saveConfig, reconfig, reload: load, toggleStocks, pickPeriod };
 })();
