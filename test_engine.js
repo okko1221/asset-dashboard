@@ -3,10 +3,33 @@ const assert = require('assert');
 const E = require('./engine.js');
 const b = require('./test_bundle.json');
 
+// ---- 契約看門（見 Desktop/Account/契約.md）：鍵名與陣列列序只能加不能改 ----
+// 這幾條若失敗，代表 GAS 端動了契約，儀表板會靜默算錯 → 先看契約.md 再決定怎麼改。
+['ok', 'generated', 'overview', 'futures', 'history', 'trades', 'daily',
+  'monthly_flow', 'settings', 'yesterday', 'bank_accounts', 'pos_history',
+  'benchmarks'].forEach(k => assert.ok(k in b, '契約缺少鍵：' + k));
+['gross', 'loan_a', 'loan_b', 'margin_debt', 'fut_leverage', 'net_ex_loan',
+  'net_inc_loan', 'realized', 'cost', 'mv', 'unrealized', 'positions']
+  .forEach(k => assert.ok(k in b.overview, '契約 overview 缺少：' + k));
+['equity', 'withdrawable', 'orig_margin', 'maint_margin', 'contract_value', 'positions']
+  .forEach(k => assert.ok(k in b.futures, '契約 futures 缺少：' + k));
+assert.ok(b.overview.positions.every(p => p.length >= 11), 'positions 每列至少 11 欄');
+assert.ok(b.trades.every(r => r.length >= 16), 'trades 每列至少 16 欄');
+assert.ok(b.history.every(r => r.length >= 7), 'history 每列至少 7 欄');
+assert.ok(b.pos_history.every(r => r.length >= 6), 'pos_history 每列至少 6 欄');
+// 列序：靠位置取值的欄位，抽驗其語意還在原位
+const cashRow = b.overview.positions.find(p => p[0] === '現金');
+assert.ok(cashRow && typeof cashRow[1] === 'string', 'positions[0]=類型、[1]=項目');
+assert.ok(b.monthly_flow.every(r => /^\d{4}[-.]\d{2}/.test(String(r[0]))), 'monthly_flow[0] 是月份');
+assert.ok(b.overview.loan_a <= 0 && b.overview.loan_b <= 0, '信貸餘額必須是負數');
+
 // 融資餘額必須來自 A8（現在是 =-SUM(交易紀錄P:P) 公式，P 欄全是對帳單實際值）
 const lc = E.loanCost(b.settings, b.overview);
 assert.strictEqual(lc.marginBal, Math.abs(+b.overview.margin_debt || 0), '融資餘額=|A8|');
-assert.ok(lc.monthly > 0 && lc.balA === 1350000 && lc.balB === 778000, '信貸餘額/月息');
+// 信貸餘額取絕對值、月息＝Σ(餘額×年利率)/12（不寫死金額，餘額會隨還款變動）
+assert.strictEqual(lc.balA, Math.abs(+b.overview.loan_a), '信貸A餘額=|A4|');
+assert.strictEqual(lc.balB, Math.abs(+b.overview.loan_b), '信貸B餘額=|A6|');
+assert.ok(lc.monthly > 0 && lc.monthly === Math.round(lc.yearly / 12), '月息=年息/12');
 
 // 現金水位 = 四個現金帳戶市值合計
 const ci = E.cashInfo(b.overview, b.monthly_flow);
