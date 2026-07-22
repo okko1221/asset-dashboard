@@ -264,7 +264,14 @@ const App = (() => {
     // ---- 年度績效 ----
     const yrs = Engine.yearlyPerf(trades);
     $('tblYearly').innerHTML = table(
-      ['年度', '已實現損益', '交易次數', '勝率', '獲利因子', '平均賺', '平均賠', '最佳', '最差'],
+      ['年度', '已實現損益', '交易次數',
+        '勝率' + infoI('這一年賣出的交易裡，賺錢的佔幾 %。只看賺或賠，不看金額大小。\n\n' +
+          '⚠️ 勝率高不等於有賺：贏九次各賺 100、輸一次賠 2000，勝率是 90%，但實際上是虧的。\n\n' +
+          '一定要跟旁邊的「獲利因子」一起看。'),
+        '獲利因子' + infoI('所有賺錢交易的總金額 ÷ 所有賠錢交易的總金額。\n\n' +
+          '1.0 ＝ 賺賠打平；1.5 以上是機構常用的穩健門檻；2.0 代表每賠 1 元就賺回 2 元。\n\n' +
+          '它比勝率誠實：勝率高但獲利因子低，代表你常常小賺、偶爾大賠。'),
+        '平均賺', '平均賠', '最佳', '最差'],
       yrs.slice().reverse().map(y => [
         `<b>${y.year}</b>`, num(y.pnl), y.trades, pct(y.winRate),
         y.profitFactor == null ? '—'
@@ -289,7 +296,16 @@ const App = (() => {
       num(s.realized), s.open ? num(s.unrealized) : '—', num(s.total),
       s.type === '期貨' ? '—' : xirrTxt(s.xirr), `${s.wins}-${s.losses}`, s.days,
     ];
-    const HEAD = ['標的', '類型', '狀態', '已實現', '未實現', '合計', '年化XIRR', '勝-敗', '持有天數'];
+    const HEAD = ['標的', '類型', '狀態', '已實現', '未實現', '合計',
+      '年化XIRR' + infoI('把每一筆錢「什麼時候投入、什麼時候拿回來」都算進去，換算成「等於一年賺幾 %」。\n\n' +
+        '跟單純的報酬率不一樣：它會把時間長短和分批進出考慮進去。\n\n' +
+        '例：投 10 萬、三個月後拿回 11 萬 → 報酬率是 10%，但年化 XIRR 約 46%（因為只花了三個月）。' +
+        '反過來，抱五年才賺 10%，年化 XIRR 只剩 2% 左右。\n\n' +
+        '期貨不算這個（沒有明確的投入本金）。'),
+      '勝-敗' + infoI('這一檔你賣出過幾次是賺的、幾次是賠的。\n\n' +
+        '例：3-1 ＝ 總共賣出四次，三次賺、一次賠。\n\n' +
+        '只算「已經賣掉」的部分，還抱在手上的不列入；同一檔分批賣出會分開計算。'),
+      '持有天數'];
     const top10 = stocks.slice(0, 10), bot10 = stocks.slice(-10).reverse();
     const midCount = Math.max(0, stocks.length - 20);
     $('tblStocks').innerHTML =
@@ -367,7 +383,12 @@ const App = (() => {
         ${cell('vs SPY', r.alphaUs == null ? '—' : `<span class="${cls(r.alphaUs)}">${PCT(r.alphaUs)}</span>`,
           r.us == null ? '' : `SPY ${PCT(r.us)}`)}
         ${cell('年化波動', PCT(r.vol, 0), lowCov ? '快照不足，偏高' : '日報酬標準差×√252')}
-        ${cell('Sharpe', r.sharpe == null ? '—' : r.sharpe.toFixed(2), '每單位風險的超額報酬')}
+        ${cell('Sharpe' + infoI('夏普值：每承受一單位風險，換到多少報酬。\n\n' +
+          '算法是（這段期間的報酬率 − 無風險利率 1.5%）÷ 波動度。\n\n' +
+          '1 以上算不錯、2 以上很好、小於 0 代表還不如放定存。\n\n' +
+          '同樣是賺 20%，一路平穩的 Sharpe 會遠高於大起大落的——它衡量的是「賺得穩不穩」。\n\n' +
+          '⚠️ 快照涵蓋度不足時這個值會被高估（不足時上方會標示）。'),
+          r.sharpe == null ? '—' : r.sharpe.toFixed(2), '每單位風險的超額報酬')}
         ${cell('期間最大回撤', `<span class="${cls(r.maxDD)}">${PCT(r.maxDD)}</span>`,
           r.calmar == null ? '' : `Calmar ${r.calmar.toFixed(2)}`)}
         ${cell('上漲天數', `${r.winDays}/${r.totalDays}`, PCT(r.dayWinRate, 0) + ' 的日子是賺的')}
