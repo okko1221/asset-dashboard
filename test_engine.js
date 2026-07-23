@@ -119,6 +119,22 @@ assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmark
   assert.strictEqual(morning.us.pnl, 6200, '早上昨夜美股 got ' + morning.us.pnl);
   assert.strictEqual(morning.tw.pnl, 11400, '早上昨日台股 got ' + morning.tw.pnl);
 
+  // 情境三：跨過午夜的凌晨 02:00，今晨快照還沒拍 → 台股「昨日」＝現價 vs 昨晨快照。
+  // 2026-07-24 使用者實測抓到：凌晨看卡片，基準寫著前天 06:36 → 顯示的是前天的行情不是昨天的
+  //（舊邏輯只看「現在幾點」，沒看「最新快照是不是今天的」，凌晨會退去比前晨vs昨晨兩張快照）。
+  const smallHours = Engine.marketDaily(ov, fut, ph, new Date('2026-07-20T02:00:00+08:00'));
+  assert.strictEqual(smallHours.tw.label, '昨日');
+  assert.strictEqual(smallHours.tw.base, '2026-07-19', '凌晨台股基準要是昨晨快照 got ' + smallHours.tw.base);
+  assert.strictEqual(smallHours.tw.pnl, 13500, '凌晨台股昨日＝現價vs昨晨（現價=昨收） got ' + smallHours.tw.pnl);
+  assert.strictEqual(smallHours.us.label, '今晚');  // 凌晨兩點美股還在盤中，照舊
+  assert.strictEqual(smallHours.us.pnl, 6200);
+
+  // 情境四：凌晨 05:30 美股剛收、今晨快照還沒拍 → 昨夜＝現價 vs 昨晨快照（不是前晨）
+  const preDawn = Engine.marketDaily(ov, fut, ph, new Date('2026-07-20T05:30:00+08:00'));
+  assert.strictEqual(preDawn.us.label, '昨夜');
+  assert.strictEqual(preDawn.us.base, '2026-07-19', '凌晨美股基準要是昨晨快照 got ' + preDawn.us.base);
+  assert.strictEqual(preDawn.tw.base, '2026-07-19', '凌晨台股基準要是昨晨快照 got ' + preDawn.tw.base);
+
   // 只有一天資料時，需要前一日的那格要回 null 而不是壞掉
   const oneDay = Engine.marketDaily(ov, fut, ph.slice(3), new Date('2026-07-19T07:00:00+08:00'));
   assert.strictEqual(oneDay.hasPrev, false);

@@ -245,15 +245,21 @@
     }
 
     const h = now.getHours() + now.getMinutes() / 60;
+    const nowDay = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    // 凌晨 00:00～晨間快照之間，最新快照其實是「昨天的」。這時收盤視角要比
+    // 現價 vs 昨晨快照（現價＝昨收，正好是昨天完整一天）；退去比前晨vs昨晨會變成前天的行情。
+    const snapIsToday = today === nowDay;
     const usLive = h >= 21.5 || h < 5;      // 美股盤中（夏令 21:30-04:00，冬令順延一小時）
     const twStarted = h >= 9;               // 台股已開盤 → 比的是今天；之前則顯示昨日結果
-    const tw = twStarted ? delta(today, null, 'TW') : delta(prev, today, 'TW');
-    const us = usLive ? delta(today, null, 'US') : delta(prev, today, 'US');
+    const closed = (bucket) => snapIsToday ? delta(prev, today, bucket) : delta(today, null, bucket);
+    const tw = twStarted ? delta(today, null, 'TW') : closed('TW');
+    const us = usLive ? delta(today, null, 'US') : closed('US');
+    const closedBase = snapIsToday ? prev : today;
     const tag = (o, label, live, base) => o && Object.assign(o, { label, live, base, baseTime: atTime[base] || '' });
     return {
       baseDay: today, prevDay: prev, hasPrev: !!prev,
-      tw: tag(tw, twStarted ? '今日' : '昨日', twStarted && h < 13.5, twStarted ? today : prev),
-      us: tag(us, usLive ? '今晚' : '昨夜', usLive, usLive ? today : prev),
+      tw: tag(tw, twStarted ? '今日' : '昨日', twStarted && h < 13.5, twStarted ? today : closedBase),
+      us: tag(us, usLive ? '今晚' : '昨夜', usLive, usLive ? today : closedBase),
     };
   }
 
