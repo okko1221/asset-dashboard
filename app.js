@@ -196,7 +196,8 @@ const App = (() => {
     mkChart('chAsset', {
       type: 'line',
       data: { labels: snaps.map(s => s.d.toLocaleDateString('zh-TW')), datasets: [
-        { label: '含信貸總資產', data: snaps.map(s => s.total), borderColor: GOLD, backgroundColor: 'rgba(201,162,39,.12)', fill: true, pointRadius: 0, tension: .25, borderWidth: 2 },
+        // 快照存的是資產總覽 A12（CELL_TOTAL）＝不含信貸——標籤曾寫成「含信貸」誤導了半年
+        { label: '不含信貸總資產', data: snaps.map(s => s.total), borderColor: GOLD, backgroundColor: 'rgba(201,162,39,.12)', fill: true, pointRadius: 0, tension: .25, borderWidth: 2 },
         { label: '投資總市值', data: snaps.map(s => s.mv), borderColor: '#3d8fd6', pointRadius: 0, tension: .25, borderWidth: 2 },
       ]},
     });
