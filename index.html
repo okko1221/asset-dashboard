@@ -37,6 +37,10 @@
   .card.hero { grid-column:span 2; background:linear-gradient(135deg,var(--navy2),#274a78);
                border-color:rgba(201,162,39,.35); }
   .card.hero .v { font-size:30px; color:var(--gold); }
+  /* 分組標題：整列寬 → 每組一定從新的一列開始，短的尾列才讀起來像「這組就這些」而不是漏排 */
+  .cards .ghead { grid-column:1/-1; font-size:11.5px; color:var(--gold); font-weight:600;
+                  letter-spacing:1px; opacity:.8; margin:18px 0 -3px; }
+  .cards .ghead:first-child { margin-top:0; }
   @media (max-width:420px){ .card.hero{grid-column:span 2} .cards{grid-template-columns:1fr 1fr} }
 
   h2 { font-size:15px; color:var(--gold); margin:26px 0 10px; border-left:3px solid var(--gold); padding-left:8px; font-weight:600; }
@@ -137,6 +141,7 @@
     <div class="panel"><div class="chartbox short"><canvas id="chAlloc"></canvas></div></div>
     <div class="panel" id="pnlConc"></div>
   </div>
+  <div class="panel" style="margin-top:10px" id="tblMarket"></div>
 
   <h2>資產曲線與回撤<span class="info" data-tip="回撤＝投資淨值距離「歷史最高點」跌了多少%（每日報酬串接、對入金免疫，含已實現＋未實現）。它不會告訴你該買或賣——它量的是風險：現在的回撤深度，加上期貨「距警戒線可虧」的金額，合起來就是你還有多少犯錯空間。">!</span></h2>
   <div class="panel"><div class="chartbox"><canvas id="chAsset"></canvas></div></div>
@@ -176,6 +181,9 @@ Calmar：年化報酬÷|最大回撤|，另一種風險調整後報酬。
   <h2>支出與儲蓄</h2>
   <div class="panel"><div class="chartbox"><canvas id="chExpense"></canvas></div></div>
   <div class="panel" style="margin-top:10px" id="tblSavings"></div>
+
+  <h2>大筆開銷 <small id="majorNote"></small></h2>
+  <div class="panel" id="tblMajor"></div>
 </div>
 
 <footer>資料來源：你自己的 Google Sheet ｜ 開源專案，無伺服器、無追蹤</footer>

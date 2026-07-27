@@ -285,6 +285,62 @@
     };
   }
 
+  // ---- 融資健康度：擔保品市值 ÷ 融資餘額，跌破 130% 券商就發追繳令 ----
+  // 擔保品只算「交易紀錄 P 欄（融資金額影響）還有餘額」的那幾檔，不是全部台股——
+  // 現金買的股票不是融資的擔保品，混進來會把維持率算得太樂觀。
+  function marginHealth(tradeRows, positions, marginDebt) {
+    const debt = Math.abs(+marginDebt || 0);
+    if (!debt) return null;
+    const bal = {};
+    (tradeRows || []).forEach((r) => { const p = +r[15] || 0; if (p) bal[r[2]] = (bal[r[2]] || 0) + p; });
+    const items = Object.keys(bal).filter((k) => Math.abs(bal[k]) > 0.5);
+    const list = (positions || []).filter((p) => items.indexOf(p[1]) >= 0)
+      .map((p) => ({ name: p[1], mv: +p[9] || 0, debt: Math.round(bal[p[1]]) }))
+      .sort((a, b) => b.mv - a.mv);
+    const collateral = list.reduce((s, x) => s + x.mv, 0);
+    return { debt, collateral, list, call: debt * 1.3,
+      ratio: collateral ? collateral / debt : null,
+      buffer: collateral ? 1 - (debt * 1.3) / collateral : null };  // 還可以跌幾 % 才碰到追繳線
+  }
+
+  // ---- 大筆開銷可花額度：額度＝股票已實現損益（他的規矩：賺到的才拿來花大的）----
+  function majorBudget(major, realized) {
+    const rows = (major || []).filter((r) => r[0]);
+    const spent = rows.reduce((s, r) => s + (+r[3] || 0), 0);  // 金額本身就是負的
+    return {
+      quota: Math.round(+realized || 0), spent: Math.round(-spent), count: rows.length,
+      left: Math.round((+realized || 0) + spent),
+      recent: rows.slice().sort((a, b) => D(b[0]) - D(a[0])).slice(0, 12).map((r) => ({
+        date: D(r[0]), item: String(r[1] || ''), amount: +r[3] || 0, status: String(r[5] || ''),
+      })),
+    };
+  }
+
+  // ---- 分市場明細：跟試算表右上四張卡同一套定義（依「類型」欄分桶，不是列號）----
+  // 成本刻意不扣融資：這樣同一列的「市值−成本≈未實現」讀起來才一致。
+  // 試算表的「投資成本」有扣融資，所以合計會差一個融資餘額，畫面上另外標。
+  const MKT = { 台股: '台股', 台股ETF: '台股', 美股: '美股', 美股ETF: '美股', 虛擬貨幣: '加密貨幣', 期貨部位: '期貨' };
+  function marketBreakdown(positions) {
+    const m = {};
+    (positions || []).forEach((p) => {
+      const k = MKT[p[0]]; if (!k) return;
+      const o = m[k] || (m[k] = { name: k, cost: 0, mv: 0, unreal: 0 });
+      o.cost += +p[8] || 0; o.mv += +p[9] || 0; o.unreal += +p[10] || 0;
+    });
+    const tot = Object.keys(m).reduce((s, k) => s + m[k].mv, 0);
+    return Object.keys(m).map((k) => Object.assign(m[k], {
+      ret: m[k].cost ? m[k].unreal / m[k].cost : null, share: tot ? m[k].mv / tot : null,
+    })).sort((a, b) => b.mv - a.mv);
+  }
+
+  // ---- 本月收支（月度總覽最後一列）----
+  function monthFlow(flow) {
+    const rows = (flow || []).filter((r) => r[0]);
+    const r = rows[rows.length - 1];
+    return r ? { month: String(r[0]), salary: +r[1] || 0, spend: +r[2] || 0,
+      big: +r[3] || 0, daily: +r[4] || 0 } : null;
+  }
+
   // ---- 回撤：日報酬串成 TWR 指數，距歷史峰值（對入金免疫）----
   function drawdownSeries(days, overview) {
     const pts = days.map((d) => ({ day: d.day, pnl: d.realized + d.unreal, mv: d.mv }));
@@ -558,7 +614,8 @@
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
-    contribution, vs0050, marketDaily, realizedToday, yearlyPerf, leverage, periodReport };
+    contribution, vs0050, marketDaily, realizedToday, marginHealth, majorBudget, marketBreakdown, monthFlow,
+    yearlyPerf, leverage, periodReport };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);

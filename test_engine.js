@@ -177,6 +177,46 @@ assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmark
   console.log('   今日已實現：07-17', hit.day, '｜07-19', quiet.day, '(無平倉)｜本月', hit.month);
 })();
 
+// 分市場明細：四個桶加起來必須等於總計，否則就是有部位的「類型」沒對到而默默掉出去
+// （試算表右上分類卡就是這樣漏掉智原的——那邊靠列號，這邊靠類型，兩邊都要能對上總計）
+(function () {
+  const mkt = E.marketBreakdown(b.overview.positions);
+  const sum = (k) => mkt.reduce((s, m) => s + m[k], 0);
+  assert.ok(Math.abs(sum('mv') - b.overview.mv) < 1, '分市場市值合計 = overview.mv');
+  assert.ok(Math.abs(sum('unreal') - b.overview.unrealized) < 1, '分市場未實現合計 = overview.unrealized');
+  // 成本這邊刻意不扣融資，所以合計要比 overview.cost 多一個融資餘額
+  assert.ok(Math.abs(sum('cost') - (b.overview.cost + Math.abs(b.overview.margin_debt))) < 1,
+    '分市場成本合計 = overview.cost + 融資餘額');
+  assert.ok(mkt.every(m => ['台股', '美股', '加密貨幣', '期貨'].indexOf(m.name) >= 0), '桶名固定四種');
+  console.log('   分市場:', mkt.map(m => `${m.name} ${Math.round(m.mv).toLocaleString()}`).join(' | '));
+})();
+
+// 融資維持率：擔保品只能是「還有融資餘額」的那幾檔，不能把現金買的股票算進來
+(function () {
+  const mh = E.marginHealth(b.trades, b.overview.positions, b.overview.margin_debt);
+  assert.ok(mh, '有融資就要算得出來');
+  assert.strictEqual(mh.debt, Math.abs(b.overview.margin_debt), '融資餘額 = |A8|');
+  assert.ok(mh.list.length && mh.list.length < b.overview.positions.length, '擔保品是部分標的，不是全部');
+  assert.ok(Math.abs(mh.collateral - mh.list.reduce((s, x) => s + x.mv, 0)) < 1, '擔保品市值 = 逐檔加總');
+  assert.ok(Math.abs(mh.ratio - mh.collateral / mh.debt) < 1e-9, '維持率 = 擔保品 ÷ 融資');
+  // 再跌 buffer 之後市值剛好等於追繳線
+  assert.ok(Math.abs(mh.collateral * (1 - mh.buffer) - mh.call) < 1, '跌掉 buffer 後剛好碰到 130%');
+  assert.strictEqual(E.marginHealth(b.trades, b.overview.positions, 0), null, '沒融資就回 null');
+  console.log('   融資維持率:', (mh.ratio * 100).toFixed(0) + '%', '擔保品', mh.list.map(x => x.name).join('/'),
+    '｜再跌', (mh.buffer * 100).toFixed(0) + '% 追繳');
+})();
+
+// 大筆開銷額度：額度－已花＝剩，三個數字要自洽（額度是股票已實現損益）
+(function () {
+  const mb = E.majorBudget(b.major, b.overview.realized);
+  assert.strictEqual(mb.quota - mb.spent, mb.left, '額度 - 已花 = 剩下');
+  assert.strictEqual(mb.quota, Math.round(b.overview.realized), '額度 = 已實現總損益');
+  assert.ok(mb.count > 0 && mb.recent.length <= 12, '筆數與最近清單長度');
+  assert.ok(mb.recent.every((r, i) => i === 0 || r.date <= mb.recent[i - 1].date), '最近清單日期遞減');
+  console.log('   大筆開銷: 額度', mb.quota.toLocaleString(), '已花', mb.spent.toLocaleString(),
+    '剩', mb.left.toLocaleString(), `(${mb.count} 筆)`);
+})();
+
 // 年度績效
 const yp = E.yearlyPerf(E.parseTrades(b.trades));
 assert.ok(yp.length >= 3, '年度筆數: ' + yp.length);

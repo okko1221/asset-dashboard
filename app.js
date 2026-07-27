@@ -70,12 +70,19 @@ const App = (() => {
     const f = b.futures || {};
     const md = Engine.marketDaily(b.overview, b.futures, b.pos_history);
     const rt = Engine.realizedToday(trades);
+    const mh = Engine.marginHealth(b.trades, b.overview.positions, b.overview.margin_debt);
+    const mb = Engine.majorBudget(b.major, b.overview.realized);
+    const mkt = Engine.marketBreakdown(b.overview.positions);
+    const mf = Engine.monthFlow(b.monthly_flow);
     const lv = Engine.leverage(b.overview);
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
     // ---- 總覽卡（第4欄=小驚嘆號說明文字）----
     const riskColor = fr && (fr.risk < 1.25 ? 'var(--up)' : fr.risk < 1.5 ? 'var(--gold)' : '');
+    // 純字串＝分組標題（整列寬）。分組不只是好看：一大排無差別方塊看不出哪些該一起讀，
+    // 而且卡片數一變就會多出一張孤兒卡。
     const cards = [
+      '今天',
       ['含信貸總資產', NT(b.overview.net_inc_loan), '不含信貸 ' + NT(b.overview.net_ex_loan), '', 'hero'],
       ['台股' + (md.tw ? md.tw.label : '今日'), mdCell(md.tw), mdSub(md, md.tw, '台股 09:00–13:30'),
         '基準＝當日 06:00 部位快照（台股還沒開盤，等於昨天的收盤價）。所以收盤後、晚上看信時，這個數字就是今天台股一整天的結果。含台股個股與股票期貨（期貨有夜盤，會一路算到隔天清晨）。算的是持倉的市場波動，當天買賣造成的已實現損益不含在內。'],
@@ -88,9 +95,10 @@ const App = (() => {
         '跟左邊兩張互補、不重疊：台股今日／美股今晚算的是「還抱著的部位漲跌」，這張算的是「已經賣掉入袋的」。\n\n' +
         '對帳單多半晚上 19:50／21:30 那兩班才收得到，所以盤中看到「今日無平倉」也可能只是還沒寄來——副標會顯示最近一次平倉是哪天。'],
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
-      ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
-        '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
-      ['投資市值', NT(b.overview.mv), '成本 ' + NT(b.overview.cost)],
+
+      '部位與風險',
+      ['投資市值', NT(b.overview.mv), '成本 ' + NT(b.overview.cost),
+        '成本已扣掉融資負債（借來的錢不算自己的成本），所以會比下面「分市場明細」的成本合計少一個融資餘額。'],
       ['期貨風險指標', fr ? `<span style="color:${riskColor}">${PCT(fr.risk, 0)}</span>` : '—',
         fr ? `距警戒線125% 可虧 ${NT(fr.toWarn)}${f.margin_asof ? `<br><span style="color:#5c728c">保證金為 ${f.margin_asof} 的值</span>` : ''}` : '',
         '權益數 ÷ 原始保證金，愈高愈安全。三條線：125% 自設警戒；權益跌破維持保證金（約77%）券商追繳；25% 強制代沖銷。\n\n注意：分子（權益數）是即時的，分母（保證金）是期交所訂的、只有對帳單來才會更新。沒交易的日子保證金會過期，這時風險指標會偏樂觀——副標有標示保證金的日期，差太多就用 ?run=setmargin 從 App 抄一次。'],
@@ -102,12 +110,31 @@ const App = (() => {
         (lv.xEx == null ? '—' : lv.xEx.toFixed(2)) + 'x）——這才是你自己承擔的風險倍數。\n' +
         '「含信貸」＝把借來的錢也當自有資金看（銀行的角度）。\n\n' +
         '曝險部位用投資市值計，期貨以合約價值計入市值。'],
-      ['槓桿利息/月', NT(lc.monthly), `信貸 ${NT(lc.balA + lc.balB)}｜融資 ${NT(lc.marginBal)}`],
+      ['融資維持率', mh ? `<span style="color:${mh.ratio < 1.5 ? '' : 'var(--up)'}">${PCT(mh.ratio, 0)}</span>` : '—',
+        mh ? `擔保品 ${NT(mh.collateral)}｜再跌 ${PCT(mh.buffer, 0)} 碰到追繳` : '目前沒有融資',
+        '融資擔保品市值 ÷ 融資餘額。跌到 130% 券商發追繳令，兩個交易日內不補錢就斷頭。\n\n' +
+        '擔保品只算「還有融資餘額」的那幾檔（從交易紀錄的融資金額欄逐檔算），現金買的股票不是擔保品——算進去會讓維持率看起來太安全。\n\n' +
+        '「再跌 X%」＝這幾檔還能跌多少才碰到 130%。'],
       ['最大回撤', `<span class="${cls(dd.maxDD)}">${PCT(dd.maxDD)}</span>`, `目前距峰值 <span class="${cls(dd.current)}">${PCT(dd.current)}</span>`,
         '投資淨值（含已實現＋未實現）從歷史最高點回吐的最大幅度，已剔除入金影響。這是風險刻度：這套打法最糟時你得吞得下這麼多浮虧。'],
+
+      '現金與開銷',
+      ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
+        '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
+      ['本月支出', mf ? NT(mf.spend) : '—',
+        mf ? `大筆 ${NT(mf.big)}｜日常 ${NT(mf.daily)}<br><span style="color:#5c728c">${mf.month}${mf.salary ? '｜收入 ' + NT(mf.salary) : '｜薪水次月才入帳'}</span>` : '',
+        '當月累計，月中看一定不完整。薪水對應「工作的月份」而不是入帳月份（7/1 領到的算 6 月），所以進行中的月份收入通常是 0。'],
+      ['大筆開銷可花', `<span class="${cls(mb.left)}">${NT(mb.left)}</span>`,
+        `額度 ${NT(mb.quota)}｜已花 ${NT(mb.spent)}（${mb.count} 筆）`,
+        '你自己訂的規矩：大筆開銷從「股票已實現損益」裡扣，賺到的才拿來花大的——薪水負責日常，投資賺的負責享受。\n\n額度＝歷年已實現損益總額，已花＝大筆開銷分頁全部加總。剩下的就是還能花的。'],
+      ['槓桿利息/月', NT(lc.monthly), `信貸 ${NT(lc.balA + lc.balB)}｜融資 ${NT(lc.marginBal)}`,
+        '每個月光是「借錢的成本」就固定流掉這些，不管市場漲跌。投資報酬要先贏過它才算真的賺。'],
     ];
-    $('cards').innerHTML = cards.map(([k, v, s, tip, extra]) =>
-      `<div class="card ${extra || ''}"><div class="k">${k}${tip ? infoI(tip) : ''}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+    $('cards').innerHTML = cards.map((c) => {
+      if (typeof c === 'string') return `<div class="ghead">${c}</div>`;
+      const [k, v, s, tip, extra] = c;
+      return `<div class="card ${extra || ''}"><div class="k">${k}${tip ? infoI(tip) : ''}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+    }).join('');
 
     // ---- 持股明細 ----
     $('holdNote').textContent = b.yesterday ? `當日漲跌基準：${tfmt(b.yesterday.at)}` : '當日漲跌明天起提供（今晚起每日 6:00 存收盤基準）';
@@ -197,6 +224,15 @@ const App = (() => {
       <div class="bars">${concBars}</div>
       <div class="k" style="color:var(--mut);font-size:12px;margin-top:14px">現金明細（合計 ${NT(ci.cash)}）</div>
       <div class="bars">${cashBars}</div>`;
+
+    // ---- 分市場明細（跟試算表右上四張卡同一套定義）----
+    $('tblMarket').innerHTML =
+      `<div class="k" style="color:var(--mut);font-size:12px;margin-bottom:8px">分市場明細</div>` +
+      table(['市場', '成本', '目前市值', '未實現', '報酬率', '占市值'],
+        mkt.map(m => [`<span style="color:${kc(m.name === '加密貨幣' ? '虛擬' : m.name)}">${m.name}</span>`,
+          NT(m.cost), NT(m.mv), num(m.unreal), pct(m.ret), PCT(m.share, 0)])) +
+      `<div class="note">成本未扣融資 ${NT(lc.marginBal)}（借來的錢）——上面「投資市值」卡的成本是扣過的，所以會差這個數。
+       期貨那列的「成本」是權益數、「市值」是合約價值，不同單位，只有「未實現」跟股票同口徑。</div>`;
 
     // ---- 資產曲線 ----
     const snaps = b.history.filter(r => r[0]).map(r => ({ d: new Date(r[0]), total: +r[1], mv: +r[4] }));
@@ -338,6 +374,13 @@ const App = (() => {
       ['月份', '收入', '總支出', '其中大筆', '結餘', '儲蓄率'],
       sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), NT(r.big),
         r.salary ? num(r.salary - r.spend) : '—', r.salary ? pct(r.rate) : '—']));
+
+    // ---- 大筆開銷（額度＝股票已實現損益）----
+    $('majorNote').textContent =
+      `已花 ${NT(mb.spent)} / 額度 ${NT(mb.quota)}，還剩 ${NT(mb.left)}（最近 ${mb.recent.length} 筆）`;
+    $('tblMajor').innerHTML = table(['日期', '項目', '金額', '結算'],
+      mb.recent.map(r => [ymd(r.date), r.item, num(r.amount),
+        r.status === '未算' ? '<span style="color:#5c728c">未算</span>' : r.status]));
   }
 
   // ---- 小工具 ----
