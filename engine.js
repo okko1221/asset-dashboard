@@ -263,6 +263,28 @@
     };
   }
 
+  // ---- 今日已實現：當天賣出／期貨平倉真正結算掉的損益 ----
+  // 跟 marketDaily 互補、不重疊：那邊算「還抱著的部位漲跌」，這邊算「已經結算掉的」。
+  // 對帳單多半晚上才寄到，盤中當日常常是 0 → 用 hasToday 區分「今天沒平倉」與「還沒收到」，
+  // 並附上最近一個有平倉的日子，免得看到 0 以為壞了。
+  function realizedToday(trades, now) {
+    const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = key(now || new Date());
+    const byDay = {};
+    (trades || []).forEach((t) => {
+      if (!t.realized) return; // null（存入資金等不進 FIFO）與 0 都不算平倉
+      const k = key(t.date);
+      byDay[k] = (byDay[k] || 0) + t.realized;
+    });
+    const lastDay = Object.keys(byDay).sort().pop() || null;
+    return {
+      today, day: Math.round(byDay[today] || 0), hasToday: today in byDay,
+      month: Math.round(Object.keys(byDay).filter((k) => k.slice(0, 7) === today.slice(0, 7))
+        .reduce((s, k) => s + byDay[k], 0)),
+      lastDay, lastPnl: lastDay ? Math.round(byDay[lastDay]) : null,
+    };
+  }
+
   // ---- 回撤：日報酬串成 TWR 指數，距歷史峰值（對入金免疫）----
   function drawdownSeries(days, overview) {
     const pts = days.map((d) => ({ day: d.day, pnl: d.realized + d.unreal, mv: d.mv }));
@@ -536,7 +558,7 @@
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
-    contribution, vs0050, marketDaily, yearlyPerf, leverage, periodReport };
+    contribution, vs0050, marketDaily, realizedToday, yearlyPerf, leverage, periodReport };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
 })(typeof self !== 'undefined' ? self : globalThis);

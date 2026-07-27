@@ -151,6 +151,32 @@ assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmark
   console.log('   分市場：晚上台股', night.tw.pnl, '/ 美股今晚', night.us.pnl, '｜早上昨夜美股', morning.us.pnl);
 })();
 
+// 今日已實現：按日切「已實現損益」欄。全部日子加起來必須剛好等於 overview.realized——
+// 少一天或重算一天都會被這條抓到（CRGO 那 500 股就是漏一筆漏出來的）。
+(function () {
+  const tr = E.parseTrades(b.trades);
+  const allDays = tr.filter(t => t.realized).reduce((s, t) => s + t.realized, 0);
+  assert.ok(Math.abs(allDays - b.overview.realized) < 1, '逐日已實現加總 = overview.realized');
+
+  const at = (iso) => E.realizedToday(tr, new Date(iso + 'T12:00:00+08:00'));
+  const hit = at('2026-07-17');   // 這天有平倉
+  assert.strictEqual(hit.day, -10200, '2026-07-17 當日已實現 -10,200');
+  assert.ok(hit.hasToday, '有平倉的日子 hasToday=true');
+  assert.strictEqual(hit.lastDay, '2026-07-17', '快照裡最後一個平倉日');
+
+  const quiet = at('2026-07-19');  // 這天沒平倉：要是 0 且標成「沒有」，不能拿別天的數字充數
+  assert.strictEqual(quiet.day, 0, '沒平倉的日子當日 = 0');
+  assert.ok(!quiet.hasToday, '沒平倉的日子 hasToday=false');
+  assert.strictEqual(quiet.lastPnl, -10200, '副標退回最近一次平倉的損益');
+
+  // 本月 = 該月每一天加總，且與當天有沒有平倉無關
+  const julDays = tr.filter(t => t.realized && t.date >= new Date('2026-07-01T00:00:00+08:00')
+    && t.date < new Date('2026-08-01T00:00:00+08:00')).reduce((s, t) => s + t.realized, 0);
+  assert.strictEqual(hit.month, Math.round(julDays), '本月已實現');
+  assert.strictEqual(quiet.month, hit.month, '本月不受「今天沒平倉」影響');
+  console.log('   今日已實現：07-17', hit.day, '｜07-19', quiet.day, '(無平倉)｜本月', hit.month);
+})();
+
 // 年度績效
 const yp = E.yearlyPerf(E.parseTrades(b.trades));
 assert.ok(yp.length >= 3, '年度筆數: ' + yp.length);

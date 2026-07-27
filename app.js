@@ -69,6 +69,7 @@ const App = (() => {
     const frows = Engine.futuresRows(b.futures, b.yesterday);
     const f = b.futures || {};
     const md = Engine.marketDaily(b.overview, b.futures, b.pos_history);
+    const rt = Engine.realizedToday(trades);
     const lv = Engine.leverage(b.overview);
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
@@ -80,6 +81,12 @@ const App = (() => {
         '基準＝當日 06:00 部位快照（台股還沒開盤，等於昨天的收盤價）。所以收盤後、晚上看信時，這個數字就是今天台股一整天的結果。含台股個股與股票期貨（期貨有夜盤，會一路算到隔天清晨）。算的是持倉的市場波動，當天買賣造成的已實現損益不含在內。'],
       ['美股' + (md.us ? md.us.label : ''), mdCell(md.us), mdSub(md, md.us, '美股 21:30–04:00'),
         '美股開盤中（21:30 後）顯示「今晚」＝現價 vs 今日 06:00；美股收盤後顯示「昨夜」＝今日 06:00 vs 昨日 06:00，也就是完整一場美股的結果——早上起床看到的就是這個。美元部位已用匯率換算成台幣。'],
+      ['今日已實現',
+        rt.hasToday ? `<span class="${cls(rt.day)}">${sign(rt.day)}</span>` : '<span style="color:#5c728c;font-size:22px">今日無平倉</span>',
+        `本月 ${NT(rt.month)}` + (rt.lastDay && !rt.hasToday ? `｜最近平倉 ${rt.lastDay.slice(5).replace('-', '/')} ${NT(rt.lastPnl)}` : ''),
+        '當天賣出、期貨平倉真正結算掉的損益（交易紀錄的「已實現損益」欄按日加總）。\n\n' +
+        '跟左邊兩張互補、不重疊：台股今日／美股今晚算的是「還抱著的部位漲跌」，這張算的是「已經賣掉入袋的」。\n\n' +
+        '對帳單多半晚上 19:50／21:30 那兩班才收得到，所以盤中看到「今日無平倉」也可能只是還沒寄來——副標會顯示最近一次平倉是哪天。'],
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
       ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
         '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
