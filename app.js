@@ -41,12 +41,27 @@ const App = (() => {
       try { b = JSON.parse(text); } catch (e) { throw new Error('回應不是 JSON——通常是金鑰錯誤或還沒授權。原文開頭：' + text.slice(0, 120)); }
       if (!b.ok) throw new Error('API 錯誤：' + (b.error || '?'));
       render(b);
+      if (!c) testBanner();   // 讀的是測試檔，不標出來會被當成真帳本（2026-07-29 踩過一次）
     } catch (e) {
       $('err').style.display = 'block';
       $('err').textContent = '❌ ' + e.message;
     } finally {
       $('loading').style.display = 'none';
     }
+  }
+
+  // 本機沒設金鑰時 load() 會改讀 test_bundle.json（一份靜態舊快照）。原本只有右上角
+  // 「資料時間」那行小字會透露，太容易漏看——2026-07-29 就把 7/21 的測試資料當成真帳本
+  // 看了一輪，以為系統壞了。壓一條橫幅在最上面。
+  function testBanner() {
+    if ($('testBanner')) return;
+    const d = document.createElement('div');
+    d.id = 'testBanner';
+    d.innerHTML = '⚠️ <b>這是測試資料</b>（test_bundle.json），不是你的帳本——' +
+      '沒有設定 API 金鑰，數字全是舊的靜態快照。點右上角「設定」填入網址與金鑰才會讀你的試算表。';
+    d.style.cssText = 'background:#c9a227;color:#1a2332;padding:11px 16px;border-radius:8px;' +
+      'margin-bottom:14px;line-height:1.5;font-size:14px';
+    $('main').prepend(d);
   }
 
   function render(b) {
