@@ -323,6 +323,17 @@ const App = (() => {
       // 一行算式擺最上面：這是整個區塊的重點，表格只是拆給你看每個月
       const term = (lab, v, sgn) => `<span style="display:inline-block;margin:0 6px">${lab} ` +
         `<b class="${cls(sgn * v)}">${NT(v)}</b></span>`;
+      // 殘差著色只標「合計」，不標單月——單月殘差被「月底快照 vs 月曆邊界」的時差主導，
+      // 實測在 -226,025 ~ +263,309 之間擺盪然後互相抵銷（10 個月裡 8 個會超過 5 萬）。
+      // 標單月等於天天喊狼來了。合計才是訊號：它維持在 76,055，變大才代表帳真的有洞。
+      const residTotal = (v) => {
+        const a = Math.abs(v);
+        const c = a > 300000 ? 'var(--up)' : a > 150000 ? 'var(--gold)' : '';
+        const tip = a > 300000 ? '　⚠️ 帳可能有洞，先更新「帳戶餘額」再看'
+          : a > 150000 ? '　⚠️ 偏大' : '';
+        return `<span style="${c ? 'color:' + c + ';font-weight:700' : ''}">${num(v)}${tip}</span>`;
+      };
+      const swing = Math.max(...attr.rows.map(r => Math.abs(r.resid)));
       $('tblAttr').innerHTML =
         `<div style="font-size:15px;line-height:2;margin-bottom:12px">` +
         `<span style="color:var(--mut)">${attr.from} → ${attr.to}（${attr.months} 個月）</span><br>` +
@@ -342,8 +353,11 @@ const App = (() => {
           ]).concat([[
             '<b>合計</b>', `<b>${NT(attr.income)}</b>`, `<b>${NT(attr.spend)}</b>`,
             `<b>${NT(attr.interest)}</b>`, `<b>${num(attr.inv)}</b>`,
-            `<b>${num(attr.resid)}</b>`, `<b>${num(attr.dNet)}</b>`,
-          ]]));
+            `<b>${residTotal(attr.resid)}</b>`, `<b>${num(attr.dNet)}</b>`,
+          ]])) +
+        `<div class="note">「無法解釋」<b>只看合計</b>（現在 ${NT(attr.resid)}，${attr.months} 個月）。` +
+        `單月數字本來就會大幅上下跳——月底快照跟月曆邊界對不齊，這期間單月最大擺盪 ${NT(swing)}，` +
+        `而且會在下個月反向抵銷，所以單月不標色也不用管。合計超過 15 萬變黃、30 萬變紅。</div>`;
     }
 
     // ---- 期間報告（半年報／年報）----
