@@ -311,6 +311,41 @@ const App = (() => {
         NT(m.interest), pct(m.netRet), NT(m.total),
       ]));
 
+    // ---- 淨值歸因 ----
+    const attr = Engine.attribution(b.history, b.monthly_flow, b.trades, lc);
+    if (!attr) {
+      $('tblAttr').innerHTML = '<div class="note">快照不足兩個月，還算不出來。</div>';
+    } else if (attr.noSpendCol) {
+      $('tblAttr').innerHTML = '<div class="note">⚠️ 拿不到「消費」欄——GAS 端還是舊版契約。' +
+        '硬算下去消費會變 0、看起來像你不花錢，所以這裡先不顯示。' +
+        '請重新部署 Apps Script（clasp push -f 再 clasp deploy）。</div>';
+    } else {
+      // 一行算式擺最上面：這是整個區塊的重點，表格只是拆給你看每個月
+      const term = (lab, v, sgn) => `<span style="display:inline-block;margin:0 6px">${lab} ` +
+        `<b class="${cls(sgn * v)}">${NT(v)}</b></span>`;
+      $('tblAttr').innerHTML =
+        `<div style="font-size:15px;line-height:2;margin-bottom:12px">` +
+        `<span style="color:var(--mut)">${attr.from} → ${attr.to}（${attr.months} 個月）</span><br>` +
+        `淨值變化 <b class="${cls(attr.dNet)}">${NT(attr.dNet)}</b>　＝　` +
+        term('收入', attr.income, 1) + '−' + term('消費', attr.spend, -1) +
+        '−' + term('利息', attr.interest, -1) + '＋' + term('投資', attr.inv, 1) +
+        '＋' + term('無法解釋', attr.resid, 1) +
+        `</div>` +
+        (attr.rows.some(r => r.missingIncome)
+          ? `<div class="note">⚠️ 有月份的「收入」還沒填（月度總覽 B 欄），那幾個月的薪水會被算進「無法解釋」。</div>` : '') +
+        (attr.conflicts.length
+          ? `<div class="note">⚠️ ${attr.conflicts.join('、')} 有兩列月度總覽落在同一個月（舊制手動結算與新制自動列重疊），已取有填收入的那列。</div>` : '') +
+        table(['月份', '收入', '消費', '利息', '投資損益', '無法解釋', 'Δ淨值'],
+          attr.rows.slice().reverse().map(r => [
+            r.month + (r.missingIncome ? '<span class="tag">收入未填</span>' : ''),
+            NT(r.income), NT(r.spend), NT(r.interest), num(r.inv), num(r.resid), num(r.dNet),
+          ]).concat([[
+            '<b>合計</b>', `<b>${NT(attr.income)}</b>`, `<b>${NT(attr.spend)}</b>`,
+            `<b>${NT(attr.interest)}</b>`, `<b>${num(attr.inv)}</b>`,
+            `<b>${num(attr.resid)}</b>`, `<b>${num(attr.dNet)}</b>`,
+          ]]));
+    }
+
     // ---- 期間報告（半年報／年報）----
     const thisYear = new Date().getFullYear();
     const PERIODS = [

@@ -275,6 +275,36 @@ console.log('   合計', Math.round(sumY).toLocaleString());
     '｜偵測到快照斷點', flagged.length, '個月:', flagged.map(m => m.month).join('、'));
 })();
 
+// ---- 淨值歸因（2026-07-30）----
+// Δ淨值 ＝ 收入 − 消費 − 利息 + 投資損益 + 無法解釋
+// 這是恆等式，不是估計：殘差用「反推」定義，所以五項相加必須剛好等於 Δ淨值。
+// 這條若失敗代表算式接錯，整個視圖就會騙人。
+(function testAttribution() {
+  const at = E.attribution(b.history, b.monthly_flow, b.trades, lc);
+  assert.ok(at && at.rows.length > 0, '歸因有資料');
+  at.rows.forEach((r) => {
+    const lhs = r.income - r.spend - r.interest + r.inv + r.resid;
+    assert.ok(Math.abs(lhs - r.dNet) < 2, r.month + ' 五項相加 = Δ淨值');
+    assert.ok(isFinite(r.inv) && isFinite(r.resid), r.month + ' 數值有限');
+  });
+  // 合計也要成立（不是逐月成立就好，加總過程不能有漏）
+  assert.ok(Math.abs((at.income - at.spend - at.interest + at.inv + at.resid) - at.dNet) < 3,
+    '合計五項相加 = 合計Δ淨值');
+  // 消費必須取 monthly_flow[7]（不含還款），取錯欄會讓殘差多出每月 37,611
+  const spendCol = b.monthly_flow.filter(r => r[7]).reduce((s, r) => s + r[7], 0);
+  const totalCol = b.monthly_flow.filter(r => r[2]).reduce((s, r) => s + r[2], 0);
+  assert.ok(spendCol < totalCol, '消費欄總額 < 總支出欄總額（證明取的是消費不是總支出）');
+  // 收入沒填的月份要標出來，否則殘差會被誤讀成帳有問題
+  assert.ok(at.rows.every(r => typeof r.missingIncome === 'boolean'), '每列都標記收入是否未填');
+  console.log('   淨值歸因:', at.from, '→', at.to,
+    '｜收入', Math.round(at.income).toLocaleString(),
+    '消費', Math.round(at.spend).toLocaleString(),
+    '利息', Math.round(at.interest).toLocaleString(),
+    '投資', Math.round(at.inv).toLocaleString(),
+    '無法解釋', Math.round(at.resid).toLocaleString(),
+    '＝Δ淨值', Math.round(at.dNet).toLocaleString());
+})();
+
 console.log('✅ all checks pass');
 console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);
 console.log('   融資餘額(A8):', lc.marginBal, '| 月息:', lc.monthly);

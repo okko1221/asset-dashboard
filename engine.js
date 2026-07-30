@@ -122,6 +122,84 @@
     return s;
   }
 
+  // ---- 淨值歸因 ----
+  //   Δ淨值 ＝ 收入 − 消費 − 利息 ＋ 投資損益 ＋ 無法解釋
+  // 為什麼要有這個視圖：2026-07-30 把「還信貸本金」當成存錢，以為十個月下來淨值該
+  // 自然增加 40 萬，結果沒增加就以為賠了 40 萬。實際上還本金是現金↓負債↓、淨值中性，
+  // 真正讓淨值長大的是「收入減消費」。四塊拆開擺在一起就不會再誤判。
+  //
+  // 「消費」一定要取 monthly_flow[7] 而不是 [2]（總支出）：舊制列的總支出含每月還款，
+  // 取錯會讓殘差每月多出 37,611，看起來像帳有洞。
+  //
+  // 「無法解釋」刻意留著不藏：快照涵蓋率只有 29%、2026-07 換帳本有斷點、帳戶餘額是
+  // 手填的會漂移，所以它一定不是 0。它變大就是在說帳又有洞了——藏起來就是重演這次的事。
+  function attribution(history, monthlyFlow, trades, loanCost, limitMonths) {
+    const snaps = (history || []).filter((r) => r[0])
+      .map((r) => ({ date: D(r[0]), total: +r[1] || 0, unreal: +r[5] || 0 }))
+      .sort((a, b) => a.date - b.date);
+    if (snaps.length < 2) return null;
+    const eom = {};
+    snaps.forEach((s) => { eom[ym(s.date)] = s; });   // 每月最後一筆
+    // 契約看門：消費欄（索引 7）是 2026-07-30 才加的。GAS 端還沒部署新版時整欄會是
+    // undefined → 消費算成 0 → 看起來像不花錢，而畫面完全正常。這種靜默錯誤要擋在門口。
+    if (!monthlyFlow || !monthlyFlow.length) return null;
+    if (monthlyFlow.every((r) => r.length < 8)) return { noSpendCol: true };
+    const flow = {}, conflicts = [];
+    (monthlyFlow || []).forEach((r) => {
+      // 舊制月份是 '2025.09.07'、新制是 '2025-09'，正規化成 yyyy-MM
+      const k = String(r[0]).slice(0, 7).replace('.', '-');
+      const cur = { income: +r[1] || 0, spend: +r[7] || 0 };
+      // 撞車：舊制最後一列（手動結算到 7/9）跟新制第一列（整個 7 月）都落在同一個月。
+      // 留有填收入的那列（舊制是完整結算），否則會被收入 0 的新制列蓋掉、憑空少一個月薪水。
+      if (flow[k]) {
+        conflicts.push(k);
+        if (!cur.income) return;
+        if (flow[k].income && !cur.income) return;
+      }
+      flow[k] = cur;
+    });
+    const all = Object.keys(eom).sort();
+    const use = limitMonths ? all.slice(-(limitMonths + 1)) : all;
+    const interestPer = loanCost ? (+loanCost.monthly || 0) : 0;
+    // 缺快照的月份會讓那一列跨月（2026-01 就沒有快照）。收支要把跨過的每一個月都加進來，
+    // 只取結束月的話那些月份的薪水與消費會憑空消失。
+    const monthsBetween = (a, b2) => {
+      const out = [];
+      const d = new Date(a.getFullYear(), a.getMonth() + 1, 1);
+      const end = new Date(b2.getFullYear(), b2.getMonth(), 1);
+      while (d <= end) { out.push(ym(d)); d.setMonth(d.getMonth() + 1); }
+      return out;
+    };
+    const rows = [];
+    for (let i = 1; i < use.length; i++) {
+      const a = eom[use[i - 1]], b2 = eom[use[i]], m = use[i];
+      const span = monthsBetween(a.date, b2.date);
+      let income = 0, spend = 0, miss = 0;
+      span.forEach((k) => {
+        const f = flow[k];
+        if (f) { income += f.income; spend += f.spend; }
+        if (!f || !f.income) miss++;
+      });
+      const inv = realizedBetween(trades, a.date, b2.date) + (b2.unreal - a.unreal);
+      const dNet = b2.total - a.total;
+      rows.push({
+        month: m + (span.length > 1 ? '（含前 ' + (span.length - 1) + ' 月）' : ''),
+        income: income, spend: spend, interest: interestPer * span.length, inv: inv, dNet: dNet,
+        // 殘差是反推的，所以五項相加恆等於 Δ淨值——這是刻意的，讓它成為對帳工具而非估計值
+        resid: dNet - (income - spend - interestPer * span.length + inv),
+        missingIncome: miss > 0, spanMonths: span.length,
+      });
+    }
+    if (!rows.length) return null;
+    const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
+    return {
+      rows: rows, from: use[0], to: use[use.length - 1], months: rows.length,
+      income: sum('income'), spend: sum('spend'), interest: sum('interest'),
+      inv: sum('inv'), dNet: sum('dNet'), resid: sum('resid'),
+      conflicts: conflicts,
+    };
+  }
+
   // ---- 月度績效 ----
   // history 欄序：日期/總資產/已實現/投資成本/投資總市值/未實現/報酬率
   // 月報酬 =（已實現＋Δ未實現）÷ 平均投資市值 —— 對入金免疫
@@ -647,7 +725,7 @@
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
     contribution, vs0050, marketDaily, realizedToday, marginHealth, majorBudget, marketBreakdown, monthFlow,
-    realizedBetween,
+    realizedBetween, attribution,
     yearlyPerf, leverage, periodReport };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;
