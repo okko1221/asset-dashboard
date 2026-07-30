@@ -162,12 +162,20 @@ assert.ok(Math.abs(cf[cf.length - 1].mine - E.monthlyPerf(b.history, b.benchmark
   const hit = at('2026-07-17');   // 這天有平倉
   assert.strictEqual(hit.day, -10200, '2026-07-17 當日已實現 -10,200');
   assert.ok(hit.hasToday, '有平倉的日子 hasToday=true');
-  assert.strictEqual(hit.lastDay, '2026-07-17', '快照裡最後一個平倉日');
+  // lastDay 是「帳本裡最後一個平倉日」，會隨新對帳單前進——從資料推導，不要寫死日期
+  // （2026-07-30 踩過：換新 fixture 後這條就紅了，但邏輯其實沒壞）
+  const byDay = {};
+  tr.filter(t => t.realized).forEach((t) => {
+    const k = new Date(t.date).toLocaleDateString('sv-SE');
+    byDay[k] = (byDay[k] || 0) + t.realized;
+  });
+  const lastKey = Object.keys(byDay).sort().pop();
+  assert.strictEqual(hit.lastDay, lastKey, '最後平倉日＝帳本實際最後平倉日');
 
   const quiet = at('2026-07-19');  // 這天沒平倉：要是 0 且標成「沒有」，不能拿別天的數字充數
   assert.strictEqual(quiet.day, 0, '沒平倉的日子當日 = 0');
   assert.ok(!quiet.hasToday, '沒平倉的日子 hasToday=false');
-  assert.strictEqual(quiet.lastPnl, -10200, '副標退回最近一次平倉的損益');
+  assert.strictEqual(quiet.lastPnl, Math.round(byDay[lastKey]), '副標退回最近一次平倉的損益');
 
   // 本月 = 該月每一天加總，且與當天有沒有平倉無關
   const julDays = tr.filter(t => t.realized && t.date >= new Date('2026-07-01T00:00:00+08:00')
@@ -231,6 +239,41 @@ yp.forEach(y => {
 const sumY = yp.reduce((s, y) => s + y.pnl, 0);
 console.log('   年度績效:', yp.map(y => y.year + ' ' + Math.round(y.pnl).toLocaleString()).join(' | '));
 console.log('   合計', Math.round(sumY).toLocaleString());
+
+// ---- 月已實現改從交易紀錄算（2026-07-30）----
+// 快照的「已實現」欄有兩種斷點：①跨年歸零（2025-12 是 499,573，2026-02 變 -66,107）
+// ②2026-07 換帳本接上五年歷史（534,606 → 1,392,877）。兩者都讓月報酬爆掉，
+// 2026-02 曾顯示 -607,077 / -17.9% 全是假的。交易紀錄的已實現是逐筆的，不受影響。
+(function testRealizedFromTrades() {
+  assert.ok(b.monthly_flow.every(r => r.length >= 8), 'monthly_flow 有還款(6)、消費(7)');
+  assert.ok(b.monthly_flow.every(r => r[7] <= r[2] + 1), '消費 ≤ 總支出');
+
+  // 全區間逐筆加總必須等於帳本總計，否則 realizedBetween 的取欄位置錯了
+  const all = E.realizedBetween(b.trades, new Date('2000-01-01'), new Date('2099-01-01'));
+  const k2 = +b.overview.realized || 0;
+  assert.ok(Math.abs(all - k2) < 2, '逐筆已實現加總=交易紀錄K2 (' + Math.round(all) + ' vs ' + Math.round(k2) + ')');
+
+  // 不重不漏：切成兩段再加回來要一樣
+  const mid = new Date('2025-01-01');
+  const a1 = E.realizedBetween(b.trades, new Date('2000-01-01'), mid);
+  const a2 = E.realizedBetween(b.trades, mid, new Date('2099-01-01'));
+  assert.ok(Math.abs(a1 + a2 - all) < 2, '切段加總不重不漏');
+
+  const perf = E.monthlyPerf(b.history, b.benchmarks, lc, b.trades);
+  assert.ok(perf.length > 0, '月度績效有資料');
+  // 每列的損益必須＝該區間逐筆已實現＋未實現變化
+  perf.forEach((m) => {
+    assert.ok(isFinite(m.pnl), m.month + ' 損益是數字');
+    assert.ok(Math.abs(m.pnl - (m.realizedTrades + m.unrealDelta)) < 2,
+      m.month + ' 損益 = 逐筆已實現 + 未實現變化');
+  });
+  // 斷點偵測：拿快照已實現的變化跟逐筆加總對撞，不一致就代表那段快照有斷點。
+  // 已知至少 2026-02（跨年歸零）與 2026-07（換帳本）會被抓到。
+  const flagged = perf.filter(m => m.snapBreak);
+  assert.ok(flagged.length >= 1, '至少偵測到一個快照斷點（實際 ' + flagged.length + '）');
+  console.log('   月已實現改從交易紀錄算：全史', Math.round(all).toLocaleString(),
+    '｜偵測到快照斷點', flagged.length, '個月:', flagged.map(m => m.month).join('、'));
+})();
 
 console.log('✅ all checks pass');
 console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);

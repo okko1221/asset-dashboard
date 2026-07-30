@@ -103,10 +103,30 @@
     }).sort((a, b) => b.total - a.total);
   }
 
+  // ---- 期間已實現：直接從交易紀錄逐筆加總 ----
+  // 為什麼不用快照的「已實現」欄：那欄是拍照當時 交易紀錄!K2 的值，有兩種斷點——
+  //   ① 跨年歸零重算：2025-12 是 499,573，2026-02 變 -66,107
+  //   ② 2026-07-17 換帳本接上五年歷史：534,606 → 1,392,877
+  // 兩者都讓月報酬爆掉（2026-02 曾顯示 -607,077 / -17.9%，全是假的）。
+  // 交易紀錄的「已實現損益」是逐筆的，不受這兩種斷點影響。
+  // 用「大於 from、小於等於 to」的區間，缺快照的月份跨月時才不會重算或漏算。
+  function realizedBetween(trades, from, to) {
+    let s = 0;
+    (trades || []).forEach((r) => {
+      if (!r || !r[0]) return;
+      const d = D(r[0]);
+      if (!(d > from) || !(d <= to)) return;
+      const v = +r[8];
+      if (v) s += v;
+    });
+    return s;
+  }
+
   // ---- 月度績效 ----
   // history 欄序：日期/總資產/已實現/投資成本/投資總市值/未實現/報酬率
-  // 月報酬 =（Δ已實現＋Δ未實現）÷ 平均投資市值 —— 對入金免疫
-  function monthlyPerf(history, benchmarks, loanCost) {
+  // 月報酬 =（已實現＋Δ未實現）÷ 平均投資市值 —— 對入金免疫
+  // trades 有給就用逐筆已實現（正確）；沒給退回快照差額（會有上面那兩種斷點）。
+  function monthlyPerf(history, benchmarks, loanCost, trades) {
     const snaps = history.filter((r) => r[0]).map((r) => ({
       date: D(r[0]), total: +r[1] || 0, realized: +r[2] || 0, cost: +r[3] || 0, mv: +r[4] || 0, unreal: +r[5] || 0,
     })).sort((a, b) => a.date - b.date);
@@ -125,7 +145,18 @@
       // 缺快照的月份會跨月：標記讓使用者知道這格涵蓋多個月
       const gap = (new Date(months[i] + '-01') - new Date(months[i - 1] + '-01')) / 2592000000;
       const spanned = gap > 1.5;
-      const pnl = (b.realized - a.realized) + (b.unreal - a.unreal);
+      const unrealDelta = b.unreal - a.unreal;
+      const snapRealized = b.realized - a.realized;
+      // 逐筆優先。兩者對撞就是斷點偵測器：快照的已實現變化本該等於逐筆加總，
+      // 差太多＝那段期間快照的已實現欄有斷點（跨年歸零／換帳本），該列的數字不能信。
+      const useTrades = trades && trades.length;
+      const realizedTrades = useTrades ? realizedBetween(trades, a.date, b.date) : snapRealized;
+      const pnl = realizedTrades + unrealDelta;
+      // 門檻 20 萬：實測兩群分得很開——正常時差（對帳單晚到幾天，月底快照還沒收到）
+      // 全在 7 萬內；真斷點是 2026-02 的 -523,272（跨年歸零）與 2026-07 的 +835,912（換帳本）。
+      // 拉太低會把每個月的正常時差都標紅，警示就沒人看了。
+      const snapBreak = useTrades && Math.abs(snapRealized - realizedTrades) > 200000
+        ? Math.round(snapRealized - realizedTrades) : null;
       const base = (a.mv + b.mv) / 2;
       const r = base > 0 ? pnl / base : null;
       const tw0 = benchAt(benchmarks && benchmarks.taiex, months[i - 1]);
@@ -135,6 +166,7 @@
       const interest = loanCost ? loanCost.monthly : 0;
       out.push({
         month: months[i] + (spanned ? '（含前月）' : ''), pnl: Math.round(pnl), ret: r, base: Math.round(base),
+        realizedTrades: Math.round(realizedTrades), unrealDelta: Math.round(unrealDelta), snapBreak: snapBreak,
         totalDelta: Math.round(b.total - a.total), total: Math.round(b.total),
         tw: tw0 && tw1 ? tw1 / tw0 - 1 : null,
         us: us0 && us1 ? us1 / us0 - 1 : null,
@@ -615,6 +647,7 @@
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
     dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
     contribution, vs0050, marketDaily, realizedToday, marginHealth, majorBudget, marketBreakdown, monthFlow,
+    realizedBetween,
     yearlyPerf, leverage, periodReport };
   if (typeof module !== 'undefined') module.exports = api;
   root.Engine = api;

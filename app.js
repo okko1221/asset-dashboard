@@ -70,7 +70,8 @@ const App = (() => {
 
     const trades = Engine.parseTrades(b.trades);
     const lc = Engine.loanCost(b.settings, b.overview);
-    const perf = Engine.monthlyPerf(b.history, b.benchmarks, lc);
+    // 傳 trades 進去：月已實現改用逐筆加總，避開快照已實現欄的跨年歸零與換帳本斷點
+    const perf = Engine.monthlyPerf(b.history, b.benchmarks, lc, b.trades);
     const stocks = Engine.stockStats(trades, b.overview.positions);
     const expM = Engine.expenseMonthly(b.daily);
     const sav = Engine.savingsRate(b.monthly_flow);
@@ -301,7 +302,11 @@ const App = (() => {
     $('tblMonthly').innerHTML = table(
       ['月份', '損益', '報酬率', '0050', 'SPY', 'α(0050)', '利息', '扣息後', '總資產'],
       perf.slice().reverse().map(m => [
-        m.month, num(m.pnl), pct(m.ret), pct(m.tw), pct(m.us),
+        m.month + (m.snapBreak ? infoI('這個月的快照「已實現」欄有斷點，差 ' + NT(m.snapBreak) +
+          '。\n\n原因是跨年歸零重算（2026-02）或換帳本接上五年歷史（2026-07）——不是真的賺賠。\n\n' +
+          '左邊的損益已改用交易紀錄逐筆加總，是對的；標記留著是因為同一段的「未實現」也受影響，' +
+          '那部分沒得根治，這一列的報酬率要打折看。') : ''),
+        num(m.pnl), pct(m.ret), pct(m.tw), pct(m.us),
         pct(m.ret != null && m.tw != null ? m.ret - m.tw : null),
         NT(m.interest), pct(m.netRet), NT(m.total),
       ]));
