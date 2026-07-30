@@ -21,6 +21,36 @@ const App = (() => {
     localStorage.setItem('dash_cfg', JSON.stringify({ url, token }));
     location.reload();
   }
+  // 「收工」按鈕：更新完銀行餘額點一下。跑 ?run=recalc（抓對帳單＋拍快照）。
+  // 為什麼要做成按鈕：這些 ?run= 指令原本得自己把網址、指令、金鑰拼起來貼到瀏覽器，
+  // 對不寫程式的人等於不存在。金鑰本來就存在這台裝置的 localStorage，按鈕直接用。
+  async function recalc() {
+    const c = cfg();
+    if (!c) { alert('還沒設定 Apps Script 網址與金鑰，先點「設定」。'); return; }
+    if (!confirm('要抓一次對帳單並拍一張資產快照嗎？\n\n通常在你剛更新完「帳戶餘額」分頁之後跑。\n可能要等 30～60 秒。')) return;
+    const btn = $('btnRecalc');
+    const box = document.createElement('div');
+    box.id = 'recalcBox';
+    box.style.cssText = 'background:var(--navy2);border:1px solid var(--line);border-radius:8px;' +
+      'padding:12px 16px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;font-size:14px';
+    box.textContent = '收工中…（抓對帳單、拍快照，別關頁面）';
+    const old = $('recalcBox');
+    if (old) old.remove();
+    $('main').prepend(box);
+    btn.disabled = true; btn.textContent = '收工中…';
+    try {
+      const r = await fetch(`${c.url}?run=recalc&token=${encodeURIComponent(c.token)}`);
+      box.textContent = await r.text();
+      await load();   // 重抓 bundle，讓畫面反映剛拍的快照
+      const again = $('recalcBox');
+      if (again) $('main').prepend(again);   // load() 會重畫，把結果框放回最上面
+    } catch (e) {
+      box.textContent = '❌ 收工失敗：' + e.message + '\n（對帳單沒抓到不會漏帳，晚點或明天 04:00 那班會補。）';
+    } finally {
+      btn.disabled = false; btn.textContent = '收工';
+    }
+  }
+
   function reconfig() {
     const c = cfg() || { url: '', token: '' };
     $('cfgUrl').value = c.url; $('cfgToken').value = c.token;
@@ -564,5 +594,5 @@ const App = (() => {
     btn.textContent = (open ? '▴ 收合中間 ' : '▾ 展開中間 ') + el.querySelectorAll('tbody tr').length + ' 檔';
   }
 
-  return { saveConfig, reconfig, reload: load, toggleStocks, pickPeriod };
+  return { saveConfig, reconfig, reload: load, toggleStocks, pickPeriod, recalc };
 })();
