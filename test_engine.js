@@ -245,7 +245,8 @@ console.log('   合計', Math.round(sumY).toLocaleString());
 // ②2026-07 換帳本接上五年歷史（534,606 → 1,392,877）。兩者都讓月報酬爆掉，
 // 2026-02 曾顯示 -607,077 / -17.9% 全是假的。交易紀錄的已實現是逐筆的，不受影響。
 (function testRealizedFromTrades() {
-  assert.ok(b.monthly_flow.every(r => r.length >= 8), 'monthly_flow 有還款(6)、消費(7)');
+  assert.ok(b.monthly_flow.every(r => r.length >= 11),
+    'monthly_flow 有還款(6)、消費(7)、固定開銷(8)、現金結餘(9)、備註(10)');
   assert.ok(b.monthly_flow.every(r => r[7] <= r[2] + 1), '消費 ≤ 總支出');
 
   // 全區間逐筆加總必須等於帳本總計，否則 realizedBetween 的取欄位置錯了
@@ -275,6 +276,45 @@ console.log('   合計', Math.round(sumY).toLocaleString());
     '｜偵測到快照斷點', flagged.length, '個月:', flagged.map(m => m.month).join('、'));
 })();
 
+// ---- 月度總覽三分法（2026-08-04）----
+// 「是否大筆」是純金額門檻（≥2000 自動勾），害房租 25,000 每月被算成「大筆」、
+// 信貸利息 4,378 掉進「日常開銷」。改成先看類別（固定開銷）再看打勾之後，
+// 這兩條鐵律就是整個分法對不對的唯一判準——不成立代表 SUMIFS 的條件漏了或重複算。
+(function testThreeWaySplit() {
+  const isNew = (r) => r[10] !== '舊制手動結算';   // 舊制列的三分法欄位是手填、本來就沒拆
+  const rows = b.monthly_flow.filter(isNew);
+  assert.ok(rows.length > 0, '至少有一列新制月份');
+  rows.forEach((r) => {
+    assert.ok(Math.abs(r[2] - (r[8] + r[3] + r[4])) < 1,
+      r[0] + ' 總支出 = 固定 + 大筆 + 日常 (' + r[2] + ' vs ' + (r[8] + r[3] + r[4]) + ')');
+    assert.ok(Math.abs(r[7] - (r[3] + r[4])) < 1,
+      r[0] + ' 消費 = 大筆 + 日常 (' + r[7] + ' vs ' + (r[3] + r[4]) + ')');
+  });
+
+  // 還本金＝結餘 − 現金結餘。L 欄靠「類別＝轉帳 且 來源＝固定開銷(自動)」認列，
+  // 手動補記漏填來源欄的話會靜默算成 0（現金結餘就等於結餘，看起來一切正常）。
+  // 有還款卻抓不到還本金 → 一定是漏填，擋在部署前。
+  rows.filter(r => r[6] > 0).forEach((r) => {
+    assert.ok((r[5] - r[9]) > 0,
+      r[0] + ' 還款 ' + r[6] + ' 卻抓不到還本金（結餘 ' + r[5] + '、現金結餘 ' + r[9] +
+      '）→ 每日記帳的還本金列來源欄沒填「固定開銷(自動)」');
+  });
+
+  // 舊制最後一列（結算到 7/9）與新制第一列（整個 7 月）都落在 2026-07。
+  // savingsRate 沒濾就會在趨勢圖上畫出兩個 7 月。
+  const sav = E.savingsRate(b.monthly_flow);
+  const seen = new Set();
+  sav.forEach((s) => {
+    const k = s.month.slice(0, 7).replace('.', '-');
+    assert.ok(!seen.has(k), '儲蓄率趨勢有重複月份：' + k);
+    seen.add(k);
+  });
+  assert.ok(sav.every(s => s.rate !== null), '儲蓄率都算得出來（進行中的月份應已被濾掉）');
+  console.log('   三分法:', rows.map(r => r[0] + ' 固定' + Math.round(r[8]).toLocaleString() +
+    '/大筆' + Math.round(r[3]).toLocaleString() + '/日常' + Math.round(r[4]).toLocaleString()).join('　'),
+    '｜儲蓄率取用', sav.length, '個完整月');
+})();
+
 // ---- 淨值歸因（2026-07-30）----
 // Δ淨值 ＝ 收入 − 消費 − 利息 + 投資損益 + 無法解釋
 // 這是恆等式，不是估計：殘差用「反推」定義，所以五項相加必須剛好等於 Δ淨值。
@@ -294,6 +334,22 @@ console.log('   合計', Math.round(sumY).toLocaleString());
   const spendCol = b.monthly_flow.filter(r => r[7]).reduce((s, r) => s + r[7], 0);
   const totalCol = b.monthly_flow.filter(r => r[2]).reduce((s, r) => s + r[2], 0);
   assert.ok(spendCol < totalCol, '消費欄總額 < 總支出欄總額（證明取的是消費不是總支出）');
+
+  // 2026-08-04：三分法後「消費」不再含固定開銷，歸因的 spend 必須是 消費 + 固定開銷。
+  // 少加固定開銷 → 房租每月 25,000 憑空消失，殘差會被誤讀成「有錢不見了」。
+  const fixedSum = b.monthly_flow.reduce((s, r) => s + (+r[8] || 0), 0);
+  assert.ok(fixedSum > 0, '測試資料要有固定開銷才驗得到（目前 ' + Math.round(fixedSum) + '）');
+  const noFixed = E.attribution(b.history, b.monthly_flow.map(r => r.slice(0, 8)), b.trades, lc);
+  assert.ok(Math.abs(noFixed.spend - at.spend) > fixedSum - 2,
+    '拿掉固定開銷欄，歸因的消費就會少掉那一整筆（證明有加進去）');
+
+  // 信貸利息不可以扣兩次：新制月份的利息已經在固定開銷裡，只該補融資利息。
+  // 用 loanCost.monthly（含信貸）算的利息，一定大於實際該扣的。
+  assert.ok(lc.marginMonthly >= 0 && lc.marginMonthly < lc.monthly,
+    '融資月息 < 總月息（信貸利息改由試算表實際值提供）');
+  const nNew = b.monthly_flow.filter(r => r[10] !== '舊制手動結算' && r[8] > 0).length;
+  assert.ok(at.interest < lc.monthly * at.months + 1,
+    '歸因利息沒有把新制月份的信貸利息扣兩次（新制 ' + nNew + ' 個月）');
   // 收入沒填的月份要標出來，否則殘差會被誤讀成帳有問題
   assert.ok(at.rows.every(r => typeof r.missingIncome === 'boolean'), '每列都標記收入是否未填');
   console.log('   淨值歸因:', at.from, '→', at.to,

@@ -168,8 +168,9 @@ const App = (() => {
       ['現金水位', NT(ci.cash), ci.months ? `可撐 ${ci.months.toFixed(1)} 個月（月支出約 ${NT(ci.monthlySpend)}）` : '',
         '可撐月數＝現金 ÷ 近 6 個完整月支出的中位數。故意不算收入——它回答的是「收入中斷時能活多久」的生存底線；有收入時實際能撐更久。'],
       ['本月支出', mf ? NT(mf.spend) : '—',
-        mf ? `大筆 ${NT(mf.big)}｜日常 ${NT(mf.daily)}<br><span style="color:#5c728c">${mf.month}${mf.salary ? '｜收入 ' + NT(mf.salary) : '｜薪水次月才入帳'}</span>` : '',
-        '當月累計，月中看一定不完整。薪水對應「工作的月份」而不是入帳月份（7/1 領到的算 6 月），所以進行中的月份收入通常是 0。'],
+        mf ? `固定 ${NT(mf.fixed)}｜大筆 ${NT(mf.big)}｜日常 ${NT(mf.daily)}<br><span style="color:#5c728c">${mf.month}${mf.ongoing ? '（進行中）' : ''}${mf.salary ? '｜收入 ' + NT(mf.salary) : '｜收入未填'}</span>` : '',
+        '當月累計，月中看一定不完整——固定開銷（房租、信貸利息）在 1 號就全記進來，所以月初看起來會特別高。'
+        + '收入按「入帳月」認列（8/1 領到的算 8 月）。月未過完時儲蓄率不出數字，避免「收入整月、支出才幾天」的假高點。'],
       ['大筆開銷可花', `<span class="${cls(mb.left)}">${NT(mb.left)}</span>`,
         `額度 ${NT(mb.quota)}｜已花 ${NT(mb.spent)}（${mb.count} 筆）`,
         '你自己訂的規矩：大筆開銷從「股票已實現損益」裡扣，賺到的才拿來花大的——薪水負責日常，投資賺的負責享受。\n\n額度＝歷年已實現損益總額，已花＝大筆開銷分頁全部加總。剩下的就是還能花的。'],
@@ -469,10 +470,14 @@ const App = (() => {
       data: { labels: months, datasets: cats.map((c, i) => ({ label: c, data: months.map(m => expM[m][c] || 0), backgroundColor: palette[i % palette.length], stack: 's', borderRadius: 3 })) },
       options: { scales: { x: { stacked: true }, y: { stacked: true } } },
     });
+    // 三分法：固定（房租、信貸利息，壓不下來的）／大筆（有打勾）／日常（其餘零星）。
+    // 「現金結餘」＝結餘 − 還本金：結餘把還本金當儲蓄（現金↓負債↓，淨值不變），
+    // 這一欄改用現金角度，那筆錢是真的離開戶頭了。舊制列與進行中的月份已在 engine 濾掉。
     $('tblSavings').innerHTML = table(
-      ['月份', '收入', '總支出', '其中大筆', '結餘', '儲蓄率'],
-      sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), NT(r.big),
-        r.salary ? num(r.salary - r.spend) : '—', r.salary ? pct(r.rate) : '—']));
+      ['月份', '收入', '總支出', '固定', '大筆', '日常', '結餘', '儲蓄率', '現金結餘'],
+      sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), NT(r.fixed), NT(r.big), NT(r.daily),
+        r.salary ? num(r.salary - r.spend) : '—', r.salary ? pct(r.rate) : '—',
+        r.cashNet ? num(r.cashNet) : '—']));
 
     // ---- 大筆開銷（額度＝股票已實現損益）----
     $('majorNote').textContent =

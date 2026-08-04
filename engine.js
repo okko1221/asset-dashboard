@@ -148,7 +148,9 @@
     (monthlyFlow || []).forEach((r) => {
       // 舊制月份是 '2025.09.07'、新制是 '2025-09'，正規化成 yyyy-MM
       const k = String(r[0]).slice(0, 7).replace('.', '-');
-      const cur = { income: +r[1] || 0, spend: +r[7] || 0 };
+      // 2026-08-04 三分法後「消費」＝大筆＋日常，不含固定開銷（房租、信貸利息）。
+      // 房租是真的花掉的錢，不加回來歸因會憑空多出 25,000/月的缺口。
+      const cur = { income: +r[1] || 0, spend: (+r[7] || 0) + (+r[8] || 0), fixed: +r[8] || 0 };
       // 撞車：舊制最後一列（手動結算到 7/9）跟新制第一列（整個 7 月）都落在同一個月。
       // 留有填收入的那列（舊制是完整結算），否則會被收入 0 的新制列蓋掉、憑空少一個月薪水。
       if (flow[k]) {
@@ -160,7 +162,12 @@
     });
     const all = Object.keys(eom).sort();
     const use = limitMonths ? all.slice(-(limitMonths + 1)) : all;
-    const interestPer = loanCost ? (+loanCost.monthly || 0) : 0;
+    // 信貸利息要不要另外扣，取決於那個月的 spend 裡有沒有含它——兩種列的規則相反：
+    //   新制列（有固定開銷欄）：利息已經在 spend 裡了 → 只補融資利息，否則重複扣
+    //   舊制列與缺資料的月份：消費＝總支出−還款，利息被扣掉了 → 信貸＋融資都要補
+    // 2026-08-04 之前這裡一律用 loanCost.monthly，新制月份的信貸利息因此被扣了兩次。
+    const loanM = loanCost ? (+loanCost.monthly || 0) : 0;         // 信貸Ａ＋信貸Ｂ＋融資
+    const marginM = loanCost ? (+loanCost.marginMonthly || 0) : 0; // 只有融資
     // 缺快照的月份會讓那一列跨月（2026-01 就沒有快照）。收支要把跨過的每一個月都加進來，
     // 只取結束月的話那些月份的薪水與消費會憑空消失。
     const monthsBetween = (a, b2) => {
@@ -174,19 +181,20 @@
     for (let i = 1; i < use.length; i++) {
       const a = eom[use[i - 1]], b2 = eom[use[i]], m = use[i];
       const span = monthsBetween(a.date, b2.date);
-      let income = 0, spend = 0, miss = 0;
+      let income = 0, spend = 0, miss = 0, interest = 0;
       span.forEach((k) => {
         const f = flow[k];
         if (f) { income += f.income; spend += f.spend; }
+        interest += (f && f.fixed > 0) ? marginM : loanM;
         if (!f || !f.income) miss++;
       });
       const inv = realizedBetween(trades, a.date, b2.date) + (b2.unreal - a.unreal);
       const dNet = b2.total - a.total;
       rows.push({
         month: m + (span.length > 1 ? '（含前 ' + (span.length - 1) + ' 月）' : ''),
-        income: income, spend: spend, interest: interestPer * span.length, inv: inv, dNet: dNet,
+        income: income, spend: spend, interest: interest, inv: inv, dNet: dNet,
         // 殘差是反推的，所以五項相加恆等於 Δ淨值——這是刻意的，讓它成為對帳工具而非估計值
-        resid: dNet - (income - spend - interestPer * span.length + inv),
+        resid: dNet - (income - spend - interest + inv),
         missingIncome: miss > 0, spanMonths: span.length,
       });
     }
@@ -274,8 +282,12 @@
     const marginBal = Math.abs(+overview.margin_debt || 0);
     const balA = Math.abs(+overview.loan_a || 0);
     const balB = Math.abs(+overview.loan_b || 0);
-    const yearly = balA * rate('信貸A年利率') + balB * rate('信貸B年利率') + marginBal * rate('融資年利率');
-    return { balA, balB, marginBal: Math.round(marginBal), yearly: Math.round(yearly), monthly: Math.round(yearly / 12) };
+    const marginYearly = marginBal * rate('融資年利率');
+    const yearly = balA * rate('信貸A年利率') + balB * rate('信貸B年利率') + marginYearly;
+    // marginMonthly 給淨值歸因用：新制月份的信貸利息已經記在「固定開銷」欄裡（每日記帳有實際列），
+    // 只有融資利息沒有任何地方記，要靠估算補。用 monthly 會把信貸利息扣兩次。
+    return { balA, balB, marginBal: Math.round(marginBal), yearly: Math.round(yearly),
+      monthly: Math.round(yearly / 12), marginMonthly: Math.round(marginYearly / 12) };
   }
 
   // ---- 每日序列：歷史快照每天取最後一筆 ----
@@ -448,7 +460,8 @@
     const rows = (flow || []).filter((r) => r[0]);
     const r = rows[rows.length - 1];
     return r ? { month: String(r[0]), salary: +r[1] || 0, spend: +r[2] || 0,
-      big: +r[3] || 0, daily: +r[4] || 0 } : null;
+      big: +r[3] || 0, daily: +r[4] || 0, fixed: +r[8] || 0, cashNet: +r[9] || 0,
+      ongoing: r[10] === '進行中' } : null;
   }
 
   // ---- 回撤：日報酬串成 TWR 指數，距歷史峰值（對入金免疫）----
@@ -502,9 +515,11 @@
         .concat(banks.map((b) => ({ name: b[0], v: +b[1] || 0, at: b[2] })));
     }
     const cash = accounts.reduce((s, a) => s + a.v, 0);
-    // 月度總覽列 [月份,收入,總支出,...]；進行中的當月支出未滿不列入中位數
+    // 月度總覽列 [月份,收入,總支出,...]；進行中的當月支出未滿不列入中位數。
+    // 舊制列也要濾掉：它的「總支出」含每月還信貸 37,611，會把月支出高估、可撐月數低估。
     const nowYm = ym(new Date());
-    const spends = (flow || []).filter((r) => r[0] && +r[2] && String(r[0]) !== nowYm)
+    const spends = (flow || []).filter((r) => r[0] && +r[2] && String(r[0]) !== nowYm &&
+        r[10] !== '舊制手動結算' && r[10] !== '進行中')
       .map((r) => +r[2]).slice(-6).sort((a, b) => a - b);
     const n = spends.length;
     const spend = n ? (spends[Math.floor((n - 1) / 2)] + spends[Math.ceil((n - 1) / 2)]) / 2 : 0;
@@ -715,9 +730,14 @@
   }
 
   // monthly_flow（月度總覽）欄序：[月份, 收入, 總支出, 其中大筆, 日常, 結餘]
+  // 只用「可信的完整月」：舊制列是手動結算的（口徑跟新制相反，總支出含還信貸），
+  // 進行中的當月則是「收入整月、支出才過幾天」，會畫出一個假高點（8/4 曾顯示 68.9%）。
+  // 舊制最後一列與新制第一列都落在 2026-07，不濾掉趨勢圖上會出現兩個 7 月。
   function savingsRate(flow) {
-    return (flow || []).filter((r) => r[0] && (+r[1] || +r[2])).map((r) => ({
+    const skip = (r) => r[10] === '舊制手動結算' || r[10] === '進行中';
+    return (flow || []).filter((r) => r[0] && (+r[1] || +r[2]) && !skip(r)).map((r) => ({
       month: String(r[0]), salary: +r[1] || 0, spend: +r[2] || 0, big: +r[3] || 0,
+      fixed: +r[8] || 0, daily: +r[4] || 0, cashNet: +r[9] || 0,
       rate: +r[1] ? 1 - (+r[2] || 0) / +r[1] : null,
     }));
   }
