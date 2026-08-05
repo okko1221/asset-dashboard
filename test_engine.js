@@ -309,7 +309,15 @@ console.log('   合計', Math.round(sumY).toLocaleString());
     assert.ok(!seen.has(k), '儲蓄率趨勢有重複月份：' + k);
     seen.add(k);
   });
-  assert.ok(sav.every(s => s.rate !== null), '儲蓄率都算得出來（進行中的月份應已被濾掉）');
+  // 端到端驗證濾網真的接上：取用的列數必須剛好等於「非舊制、非進行中」的列數。
+  // 不用「每列都算得出儲蓄率」當判準——那條在某個完整月忘了填收入時也會失敗，
+  // 那是資料問題不是程式問題，拿部署關去擋只會訓練人忽略它。
+  const eligible = b.monthly_flow.filter(r =>
+    r[10] !== '進行中' && r[10] !== '舊制手動結算' && (+r[1] || +r[2]));
+  assert.strictEqual(sav.length, eligible.length, '儲蓄率只取用非舊制、非進行中的月份');
+  const noSalary = sav.filter(s => !s.salary).map(s => s.month);
+  if (noSalary.length) console.log('   ⚠️ 這些完整月份還沒填收入，儲蓄率算不出來:', noSalary.join('、'));
+  assert.ok(sav.filter(s => s.salary).every(s => s.rate !== null), '有收入的月份都算得出儲蓄率');
   console.log('   三分法:', rows.map(r => r[0] + ' 固定' + Math.round(r[8]).toLocaleString() +
     '/大筆' + Math.round(r[3]).toLocaleString() + '/日常' + Math.round(r[4]).toLocaleString()).join('　'),
     '｜儲蓄率取用', sav.length, '個完整月');

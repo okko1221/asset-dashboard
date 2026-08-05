@@ -477,7 +477,9 @@ const App = (() => {
       ['月份', '收入', '總支出', '固定', '大筆', '日常', '結餘', '儲蓄率', '現金結餘'],
       sav.slice().reverse().map(r => [r.month, NT(r.salary), NT(r.spend), NT(r.fixed), NT(r.big), NT(r.daily),
         r.salary ? num(r.salary - r.spend) : '—', r.salary ? pct(r.rate) : '—',
-        r.cashNet ? num(r.cashNet) : '—']));
+        // 判準用 salary 跟左邊兩欄一致：現金結餘剛好是 0（結餘＝還本金）要顯示 0，
+        // 但收入沒填時整列沒有結餘可算，這時的 0 是「沒資料」不是「打平」。
+        r.salary ? num(r.cashNet) : '—']));
 
     // ---- 大筆開銷（額度＝股票已實現損益）----
     $('majorNote').textContent =
