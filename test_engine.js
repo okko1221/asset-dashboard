@@ -71,13 +71,27 @@ if (b.yesterday) {
     assert.ok(Math.min(...zeroAt) > Math.max(...heldAt), '賣光的要排在所有持有中的後面');
   }
   const held = hd.filter(r => r.qty !== 0);
-  const rk = t => ['台股', '台股ETF', '美股', '美股ETF', '虛擬貨幣'].indexOf(t);
+  // 跟產品端同一套：ETF 併進同市場，未知類型排最後（回 -1 的話斷言方向會相反）
+  const MKTX = { 台股: 0, 台股ETF: 0, 美股: 1, 美股ETF: 1, 虛擬貨幣: 2 };
+  const rk = t => (t in MKTX ? MKTX[t] : 3);
   held.forEach((r, i) => {
     if (i === 0) return;
     const p = held[i - 1];
     assert.ok(rk(p.type) <= rk(r.type), `類型要分區排：${p.type} 不該排在 ${r.type} 後面`);
-    if (p.type === r.type) assert.ok(p.mv >= r.mv, `同類型要市值大到小：${p.item} ${p.mv} < ${r.item} ${r.mv}`);
+    if (rk(p.type) === rk(r.type)) assert.ok(p.mv >= r.mv, `同一區要市值大到小：${p.item} ${p.mv} < ${r.item} ${r.mv}`);
   });
+}
+
+// 期貨部位當天平掉一部分，不可以把「現值變小」當成虧損
+// （2026-08-12：台股卡顯示 -607,785，其中 60 萬是台積8/創意8 平倉造成的假跌）
+{
+  const ph = [['2026-08-11', '期', '台積8', 1190000, 1190000, 400, '06:36'],
+              ['2026-08-11', '股', '冠德', 35, 245000, 7000, '06:36']];
+  const fut = { positions: [['台積8', 0, 0, 200, 958000, 0]] };          // 數量 400→200
+  const ov = { positions: [['台股', '冠德', '2520', 7000, 35, 34.6, 'TWD', 1, 0, 0, 0]] };
+  const md = E.marketDaily(ov, fut, ph, new Date('2026-08-11T22:00:00+08:00'));
+  assert.ok(md.tw.changed.includes('台積8'), '數量變動的期貨要列進 changed');
+  assert.ok(Math.abs(md.tw.pnl - (34.6 - 35) * 7000) < 1, `平倉的期貨不可計入市場波動，實際 ${md.tw.pnl}`);
 }
 
 // 每日序列 + 今日昨日 + 回撤

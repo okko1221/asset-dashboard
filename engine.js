@@ -359,7 +359,14 @@
         const base = (byDay[baseDay] || {})[item];
         const tgt = cmpDay ? (byDay[cmpDay] || {})[item] : c;
         if (!base || !tgt) { skipped++; return; }
-        if (base.qty !== tgt.qty) changed.push(item);
+        if (base.qty !== tgt.qty) {
+          changed.push(item);
+          // 期貨存的是「整個部位的現值」而不是單價，數量一變，現值差＝部位變大變小，不是漲跌。
+          // 2026-08-12 踩到：當天平掉部分台積8、創意8，台股卡顯示 -607,785，其中 60 萬是這樣來的
+          // （台積8 -232,000、創意8 -368,000），真正的市場波動只有 -7,785。
+          // 股票不受影響——它是「基準日數量 × 價差」，數量變動不進這條式子。
+          if (c.isFut) { skipped++; return; }
+        }
         pnl += c.isFut ? (tgt.price - base.price) : (tgt.price - base.price) * base.qty * c.fx;
         counted++;
       });
@@ -559,8 +566,9 @@
     rows.forEach((r) => { r.weight = total > 0 ? r.mv / total : 0; });
     // 台股一區、美股一區，組內市值大→小；賣光的（數量 0）一律沉到最底下。
     // 只動顯示順序——資產總覽那邊的列不搬（清倉列刪掉曾誤刪還持有的部位）
-    const TYPE_ORDER = ['台股', '台股ETF', '美股', '美股ETF', '虛擬貨幣'];
-    const rank = (t) => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? TYPE_ORDER.length : i; };
+    // 分區用 MKT（台股ETF 也算台股）：不然一檔 0050 市值再大也會被排到台股個股後面
+    const MKT_ORDER = ['台股', '美股', '加密貨幣'];
+    const rank = (t) => { const i = MKT_ORDER.indexOf(MKT[t]); return i < 0 ? MKT_ORDER.length : i; };
     return rows.sort((a, b) =>
       (a.qty === 0) - (b.qty === 0)
       || rank(a.type) - rank(b.type)
