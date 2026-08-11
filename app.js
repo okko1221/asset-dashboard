@@ -194,7 +194,7 @@ const App = (() => {
         NT(h.mv),
         `<span style="background:linear-gradient(90deg,rgba(61,143,214,.28) ${Math.round(h.weight * 100)}%,transparent ${Math.round(h.weight * 100)}%);border-radius:4px;padding:1px 5px">${PCT(h.weight, 0)}</span>`,
         num(h.pl), pct(h.plPct),
-      ]));
+      ]), i => hold[i].qty === 0 ? 'sold' : '');   // 賣光的淡化，資料還在（買回來就自己亮起來）
 
     // ---- 損益貢獻（近30天，資料自部位歷史累積）----
     const cutoff = new Date(Date.now() - 30 * 86400000);
@@ -514,9 +514,9 @@ const App = (() => {
     cfg.options = Object.assign({}, cfg.options, base);
     charts[id] = new Chart($(id), cfg);
   }
-  function table(head, rows) {
+  function table(head, rows, rowCls) {
     return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
-      rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+      rows.map((r, i) => `<tr${rowCls && rowCls(i) ? ` class="${rowCls(i)}"` : ''}>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
   }
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 

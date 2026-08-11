@@ -63,6 +63,22 @@ if (b.yesterday) {
   const withDay = hd.filter(r => r.dayPct != null);
   assert.ok(withDay.length > 0, 'yesterday 存在時應有當日漲跌');
 }
+// 顯示順序：賣光的沉底 → 台股一區在前、美股一區在後 → 組內市值大到小
+{
+  const zeroAt = hd.map((r, i) => r.qty === 0 ? i : -1).filter(i => i >= 0);
+  const heldAt = hd.map((r, i) => r.qty !== 0 ? i : -1).filter(i => i >= 0);
+  if (zeroAt.length && heldAt.length) {
+    assert.ok(Math.min(...zeroAt) > Math.max(...heldAt), '賣光的要排在所有持有中的後面');
+  }
+  const held = hd.filter(r => r.qty !== 0);
+  const rk = t => ['台股', '台股ETF', '美股', '美股ETF', '虛擬貨幣'].indexOf(t);
+  held.forEach((r, i) => {
+    if (i === 0) return;
+    const p = held[i - 1];
+    assert.ok(rk(p.type) <= rk(r.type), `類型要分區排：${p.type} 不該排在 ${r.type} 後面`);
+    if (p.type === r.type) assert.ok(p.mv >= r.mv, `同類型要市值大到小：${p.item} ${p.mv} < ${r.item} ${r.mv}`);
+  });
+}
 
 // 每日序列 + 今日昨日 + 回撤
 const days = E.dailySeries(b.history);

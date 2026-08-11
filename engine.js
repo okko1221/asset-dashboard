@@ -557,7 +557,14 @@
       });
     const total = rows.reduce((s, r) => s + r.mv, 0);
     rows.forEach((r) => { r.weight = total > 0 ? r.mv / total : 0; });
-    return rows.sort((a, b) => b.mv - a.mv);
+    // 台股一區、美股一區，組內市值大→小；賣光的（數量 0）一律沉到最底下。
+    // 只動顯示順序——資產總覽那邊的列不搬（清倉列刪掉曾誤刪還持有的部位）
+    const TYPE_ORDER = ['台股', '台股ETF', '美股', '美股ETF', '虛擬貨幣'];
+    const rank = (t) => { const i = TYPE_ORDER.indexOf(t); return i < 0 ? TYPE_ORDER.length : i; };
+    return rows.sort((a, b) =>
+      (a.qty === 0) - (b.qty === 0)
+      || rank(a.type) - rank(b.type)
+      || b.mv - a.mv);
   }
 
   // ---- 期貨部位明細（E名 F合約成本 G均價 H數量 I現值 J損益）----
