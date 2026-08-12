@@ -77,12 +77,29 @@ const App = (() => {
     throw last;
   }
 
+  // 上次成功的整包資料。GAS 要 9~11 秒，那段空白最容易被當成「掛了」——先把上次的畫出來
+  // （標明是舊的），拿到新的再重畫。壞掉的快取當作沒有，絕不擋住這次載入。
+  const CACHE_KEY = 'dash_cache_v1';
+  function 畫快取() {
+    try {
+      const b = JSON.parse(localStorage.getItem(CACHE_KEY));
+      if (!b || !b.ok) return false;
+      render(b);
+      $('gen').textContent += '（上次的資料，更新中…）';
+      return true;
+    } catch (e) {
+      localStorage.removeItem(CACHE_KEY);   // 結構對不上就丟掉，下次成功會重存
+      return false;
+    }
+  }
+
   async function load() {
     const c = cfg();
     const local = ['localhost', '127.0.0.1'].includes(location.hostname);
     if (!c && !local) { $('gate').style.display = 'block'; return; }
     $('err').style.display = 'none';
     $('loading').style.display = 'block';
+    const 有舊的 = c ? 畫快取() : false;   // 本機讀 test_bundle.json，不進快取路徑
     try {
       const url = c ? `${c.url}?run=data&token=${encodeURIComponent(c.token)}` : 'test_bundle.json'; // 本機開發用真實快照
       const res = await fetchRetry(url);
@@ -91,14 +108,17 @@ const App = (() => {
       try { b = JSON.parse(text); } catch (e) { throw new Error('回應不是 JSON——通常是金鑰錯誤或還沒授權。原文開頭：' + text.slice(0, 120)); }
       if (!b.ok) throw new Error('API 錯誤：' + (b.error || '?'));
       render(b);
+      if (c) { try { localStorage.setItem(CACHE_KEY, text); } catch (e) { /* 存不下就算了，不擋畫面 */ } }
       if (!c) testBanner();   // 讀的是測試檔，不標出來會被當成真帳本（2026-07-29 踩過一次）
     } catch (e) {
       // Safari 的 "Load failed" / Chrome 的 "Failed to fetch" 對使用者是天書，翻成能行動的話
       const 連不上 = /load failed|failed to fetch|networkerror|abort/i.test(e.message || '');
       $('err').style.display = 'block';
-      $('err').textContent = 連不上
+      $('err').textContent = (連不上
         ? `❌ 連不上你的 Apps Script（${e.message}）。這支要跑 10 秒以上，網路瞬斷或中途切到別的 App 就會斷——按右上角 ↻ 再試一次通常就好。`
-        : '❌ ' + e.message;
+        : '❌ ' + e.message)
+        // 畫面上還留著上次的數字，一定要講明白是舊的——不然會拿過期數字做決定
+        + (有舊的 ? '　⚠️ 下面顯示的是上次成功抓到的資料，不是現在的。' : '');
     } finally {
       $('loading').style.display = 'none';
     }
