@@ -550,7 +550,9 @@
   function holdings(overview, yesterday) {
     const y = (yesterday && yesterday.positions) || {};
     const rows = (overview.positions || [])
-      .filter((p) => p[0] !== '現金' && p[0] !== '期貨部位')
+      // 賣光的（數量 0）不列出來——資產總覽那邊的列照樣留著（清倉列刪掉曾誤刪還持有的部位），
+      // 只是畫面不顯示，否則賣過的股票會一路累積下去。買回來就自己出現
+      .filter((p) => p[0] !== '現金' && p[0] !== '期貨部位' && (+p[3] || 0) !== 0)
       .map((p) => {
         const qty = +p[3] || 0, price = +p[5] || 0, fx = +p[7] || 1;
         const cost = +p[8] || 0, mv = +p[9] || 0, pl = +p[10] || 0;
@@ -564,15 +566,11 @@
       });
     const total = rows.reduce((s, r) => s + r.mv, 0);
     rows.forEach((r) => { r.weight = total > 0 ? r.mv / total : 0; });
-    // 台股一區、美股一區，組內市值大→小；賣光的（數量 0）一律沉到最底下。
-    // 只動顯示順序——資產總覽那邊的列不搬（清倉列刪掉曾誤刪還持有的部位）
+    // 台股一區、美股一區，組內市值大→小。
     // 分區用 MKT（台股ETF 也算台股）：不然一檔 0050 市值再大也會被排到台股個股後面
     const MKT_ORDER = ['台股', '美股', '加密貨幣'];
     const rank = (t) => { const i = MKT_ORDER.indexOf(MKT[t]); return i < 0 ? MKT_ORDER.length : i; };
-    return rows.sort((a, b) =>
-      (a.qty === 0) - (b.qty === 0)
-      || rank(a.type) - rank(b.type)
-      || b.mv - a.mv);
+    return rows.sort((a, b) => rank(a.type) - rank(b.type) || b.mv - a.mv);
   }
 
   // ---- 期貨部位明細（E名 F合約成本 G均價 H數量 I現值 J損益）----

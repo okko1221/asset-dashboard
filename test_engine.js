@@ -63,14 +63,12 @@ if (b.yesterday) {
   const withDay = hd.filter(r => r.dayPct != null);
   assert.ok(withDay.length > 0, 'yesterday 存在時應有當日漲跌');
 }
-// 顯示順序：賣光的沉底 → 台股一區在前、美股一區在後 → 組內市值大到小
+// 顯示：賣光的不列出來（資產總覽的列還在，只是畫面不顯示）→ 台股一區在前、美股一區在後 → 組內市值大到小
 {
-  const zeroAt = hd.map((r, i) => r.qty === 0 ? i : -1).filter(i => i >= 0);
-  const heldAt = hd.map((r, i) => r.qty !== 0 ? i : -1).filter(i => i >= 0);
-  if (zeroAt.length && heldAt.length) {
-    assert.ok(Math.min(...zeroAt) > Math.max(...heldAt), '賣光的要排在所有持有中的後面');
-  }
-  const held = hd.filter(r => r.qty !== 0);
+  assert.ok(hd.every(r => r.qty !== 0), '賣光的不該出現在持股明細');
+  assert.ok((b.overview.positions || []).some(p => p[0] !== '現金' && p[0] !== '期貨部位' && (+p[3] || 0) === 0),
+    '測試資料裡要有清倉的標的，否則上面那條等於沒測到');
+  const held = hd;
   // 跟產品端同一套：ETF 併進同市場，未知類型排最後（回 -1 的話斷言方向會相反）
   const MKTX = { 台股: 0, 台股ETF: 0, 美股: 1, 美股ETF: 1, 虛擬貨幣: 2 };
   const rk = t => (t in MKTX ? MKTX[t] : 3);
