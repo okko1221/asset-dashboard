@@ -57,6 +57,26 @@ const App = (() => {
     $('main').style.display = 'none'; $('gate').style.display = 'block';
   }
 
+  // ?run=data 要跑 10 秒以上（GAS 每次重算整份試算表）。這麼長的請求很容易被行動網路瞬斷、
+  // 或 Safari 在切到別的 App 時中止——而 Safari 只吐一句 "Load failed"，看不出發生什麼事。
+  // 自動重試一次，絕大多數瞬斷就這樣過了；45 秒沒回就中止，不然畫面會一直轉圈。
+  async function fetchRetry(url, tries = 2) {
+    let last;
+    for (let i = 0; i < tries; i++) {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 45000);
+      try {
+        return await fetch(url, { signal: ac.signal });
+      } catch (e) {
+        last = e;
+        if (i < tries - 1) await new Promise((r) => setTimeout(r, 1200));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    throw last;
+  }
+
   async function load() {
     const c = cfg();
     const local = ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -65,7 +85,7 @@ const App = (() => {
     $('loading').style.display = 'block';
     try {
       const url = c ? `${c.url}?run=data&token=${encodeURIComponent(c.token)}` : 'test_bundle.json'; // 本機開發用真實快照
-      const res = await fetch(url);
+      const res = await fetchRetry(url);
       const text = await res.text();
       let b;
       try { b = JSON.parse(text); } catch (e) { throw new Error('回應不是 JSON——通常是金鑰錯誤或還沒授權。原文開頭：' + text.slice(0, 120)); }
@@ -73,8 +93,12 @@ const App = (() => {
       render(b);
       if (!c) testBanner();   // 讀的是測試檔，不標出來會被當成真帳本（2026-07-29 踩過一次）
     } catch (e) {
+      // Safari 的 "Load failed" / Chrome 的 "Failed to fetch" 對使用者是天書，翻成能行動的話
+      const 連不上 = /load failed|failed to fetch|networkerror|abort/i.test(e.message || '');
       $('err').style.display = 'block';
-      $('err').textContent = '❌ ' + e.message;
+      $('err').textContent = 連不上
+        ? `❌ 連不上你的 Apps Script（${e.message}）。這支要跑 10 秒以上，網路瞬斷或中途切到別的 App 就會斷——按右上角 ↻ 再試一次通常就好。`
+        : '❌ ' + e.message;
     } finally {
       $('loading').style.display = 'none';
     }
