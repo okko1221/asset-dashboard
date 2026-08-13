@@ -223,6 +223,8 @@ const App = (() => {
     const mf = Engine.monthFlow(b.monthly_flow);
     const lv = Engine.leverage(b.overview);
     const tfmt = (d) => new Date(d).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+    // 「現在幾點」一律問台北的時鐘，不看裝置時區（跟 engine.investToday 同一個理由）
+    const tpeHour = (d) => Number(new Date(d).toLocaleString('en-US', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false }));
 
     // ---- 總覽卡（第4欄=小驚嘆號說明文字）----
     const riskColor = fr && (fr.risk < 1.25 ? 'var(--up)' : fr.risk < 1.5 ? 'var(--gold)' : '');
@@ -244,7 +246,11 @@ const App = (() => {
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
       [it && !it.isToday ? '投資增減' : '投資今日增減',
         it ? `<span class="${cls(it.pnl)}">${sign(it.pnl)}</span>` : '<span style="color:#5c728c;font-size:22px">累積中</span>',
-        it ? (it.isToday ? `基準 ${tfmt(it.baseAt)}（今晨）` : `⚠️ 今晨沒拍到快照<br>基準 ${tfmt(it.baseAt)} 起`) : '要有一張晨間快照才算得出來',
+        // 凌晨（00:00~晨拍）「沒有今日基準」是正常的——快照 06:00 才拍，不是拍失敗。
+        // 掛 ⚠️ 會把每天凌晨都變成假警報，真的拍失敗（白天還沒有今日基準）才需要警告。
+        it ? (it.isToday ? `基準 ${tfmt(it.baseAt)}（今晨）`
+          : (tpeHour(b.generated) < 7 ? `凌晨時段｜基準 ${tfmt(it.baseAt)} 起<br>今晨 06:00 拍照後重新起算`
+            : `⚠️ 今晨沒拍到快照<br>基準 ${tfmt(it.baseAt)} 起`)) : '要有一張晨間快照才算得出來',
         '今天投資部位總共多了還是少了多少錢＝（現在的已實現＋未實現）減掉（今天早上快照的已實現＋未實現）。\n\n' +
         '為什麼要多這一張：「台股今日」算的是「還抱著的部位」漲跌，而且當天有平倉、轉倉的標的會被整檔跳過'
         + '（快照只存部位總現值，拆不出「平倉把本金抽走」跟「行情漲跌」，寧可少算也不亂算）。'
