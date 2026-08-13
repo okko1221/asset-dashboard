@@ -134,13 +134,20 @@ const App = (() => {
     }
   }
 
-  async function load(fresh) {
+  // 同時可能有兩個載入在跑（背景自動更新 + 你按了 ↻）。慢的那個若後回來，會把新數字蓋回舊的。
+  // 每次載入拿一個號碼牌，只有最新的那次可以畫上去、可以寫進本機快取。
+  let 載入序號 = 0;
+
+  async function load(fresh, 背景) {
     const c = cfg();
     const local = ['localhost', '127.0.0.1'].includes(location.hostname);
     if (!c && !local) { $('gate').style.display = 'block'; return; }
+    const 我的號碼 = ++載入序號;
     $('err').style.display = 'none';
-    $('loading').style.display = 'block';
-    const 有舊的 = c ? 畫快取() : false;   // 本機讀 test_bundle.json，不進快取路徑
+    // 背景更新時不要跳出「載入中」——畫面上已經有數字了，跳出來只會把內容往下推 11 秒
+    if (!背景) $('loading').style.display = 'block';
+    // 背景更新時畫面上已經是同一份資料了，不必再畫一次本機快取（會多閃一下、還會誤標「上次的資料」）
+    const 有舊的 = (c && !背景) ? 畫快取() : false;   // 本機讀 test_bundle.json，不進快取路徑
     try {
       const url = c ? `${c.url}?run=data&token=${encodeURIComponent(c.token)}${fresh ? '&fresh=1' : ''}` : 'test_bundle.json'; // 本機開發用真實快照
       const res = await fetchRetry(url);
@@ -148,6 +155,7 @@ const App = (() => {
       let b;
       try { b = JSON.parse(text); } catch (e) { throw new Error('回應不是 JSON——通常是金鑰錯誤或還沒授權。原文開頭：' + text.slice(0, 120)); }
       if (!b.ok) throw new Error('API 錯誤：' + (b.error || '?'));
+      if (我的號碼 !== 載入序號) return;   // 已經有更新的一次在跑，這份是舊的，丟掉
       render(b);
       if (c) { try { localStorage.setItem(CACHE_KEY, text); } catch (e) { /* 存不下就算了，不擋畫面 */ } }
       if (!c) testBanner();   // 讀的是測試檔，不標出來會被當成真帳本（2026-07-29 踩過一次）
@@ -155,9 +163,10 @@ const App = (() => {
       // 拿到的若不是剛算的，再自己補一次 fresh=1 在背景換成最新——快與新兩件事都要。
       if (c && !fresh && Date.now() - new Date(b.generated).getTime() > 45000) {
         $('gen').textContent += '（更新中…）';
-        load(true).catch(() => { /* 背景更新失敗就維持現在畫面，錯誤已在 render 標時間 */ });
+        load(true, true).catch(() => { /* 背景更新失敗就維持現在畫面，錯誤已在 render 標時間 */ });
       }
     } catch (e) {
+      if (我的號碼 !== 載入序號) return;   // 舊的那次失敗不該蓋掉新的畫面
       // Safari 的 "Load failed" / Chrome 的 "Failed to fetch" 對使用者是天書，翻成能行動的話
       const 連不上 = /load failed|failed to fetch|networkerror|abort/i.test(e.message || '');
       $('err').style.display = 'block';
@@ -167,7 +176,7 @@ const App = (() => {
         // 畫面上還留著上次的數字，一定要講明白是舊的——不然會拿過期數字做決定
         + (有舊的 ? '　⚠️ 下面顯示的是上次成功抓到的資料，不是現在的。' : '');
     } finally {
-      $('loading').style.display = 'none';
+      if (!背景) $('loading').style.display = 'none';
     }
   }
 

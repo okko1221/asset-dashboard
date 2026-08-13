@@ -445,6 +445,17 @@ console.log('   合計', Math.round(sumY).toLocaleString());
   // 情境六：完全沒有歷史 → 回 null，畫面顯示「累積中」而不是假的 0
   assert.strictEqual(E.investToday(ov, [], new Date()), null, '情境六：沒資料回 null');
 
+  // 情境七：人在國外看（裝置時區不是台北）。「今天」與「09:00 開盤」一律以台北時鐘判斷，
+  // 否則台北 13:40 的快照在英國是清晨 05:40，會被當成開盤前基準 → 整個台股盤中被漏掉。
+  // 用 UTC 當「裝置時區」模擬：台北 06:36 = UTC 前一天 22:36。
+  const h7 = [
+    H('2026-08-13T06:36:00+08:00', 700000, -180000),   // 台北今天的晨拍
+    H('2026-08-13T13:40:00+08:00', 900000, -190000),   // 台北今天收盤後（不可當基準）
+  ];
+  const r7 = E.investToday(ov, h7, new Date('2026-08-13T22:00:00+08:00'));
+  assert.strictEqual(r7.isToday, true, '情境七：跨時區仍認得出「台北的今天」');
+  assert.strictEqual(r7.pnl, (1000000 - 200000) - (700000 - 180000), '情境七：基準仍是台北 06:36 那筆');
+
   // 真實 bundle 跑得動、數字有限
   const real = E.investToday(b.overview, b.history, new Date(b.generated));
   assert.ok(real === null || isFinite(real.pnl), '真實資料：投資今日增減算得出來');

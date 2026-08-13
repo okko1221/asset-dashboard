@@ -314,8 +314,12 @@
       at: D(r[0]), realized: +r[2] || 0, unreal: +r[5] || 0,
     })).filter((r) => r.at <= t).sort((a, b) => a.at - b.at);
     if (!rows.length) return null;
-    const sameDay = (d) => d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
-    const todays = rows.filter((r) => sameDay(r.at) && r.at.getHours() < 9);
+    // 「今天」和「09:00」都以台北時鐘為準，不看裝置在哪個時區：出國時用當地時區判斷，
+    // 台北 13:40 的快照在英國是清晨 05:40，會被誤當成「開盤前」的基準，於是漏掉整個台股盤中。
+    const tpe = (d) => new Date(d.getTime() + (480 + d.getTimezoneOffset()) * 60000); // 台灣沒有日光節約，固定 UTC+8
+    const nowT = tpe(t);
+    const sameDay = (d) => d.getFullYear() === nowT.getFullYear() && d.getMonth() === nowT.getMonth() && d.getDate() === nowT.getDate();
+    const todays = rows.filter((r) => { const a = tpe(r.at); return sameDay(a) && a.getHours() < 9; });
     const base = todays.length ? todays[todays.length - 1] : rows[rows.length - 1];
     return {
       pnl: ((+overview.realized || 0) + (+overview.unrealized || 0)) - (base.realized + base.unreal),
