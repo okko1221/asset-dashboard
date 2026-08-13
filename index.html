@@ -107,7 +107,8 @@
   <h1>📊 資產儀表板</h1>
   <div class="meta" id="gen"></div>
   <button onclick="App.reload()" title="重新抓資料">↻</button>
-  <button onclick="App.recalc()" id="btnRecalc" title="抓一次對帳單＋拍快照，讓剛更新的銀行餘額生效">收工</button>
+  <button onclick="App.fetchNow()" id="btnFetch" title="收到國泰的對帳單信之後按：立刻叫雲端爬蟲去收，不用等排程">抓對帳單</button>
+  <button onclick="App.recalc()" id="btnRecalc" title="更新完「帳戶餘額」分頁後按：收刷卡信＋拍一張資產快照">收工</button>
   <button onclick="App.reconfig()">設定</button>
 </header>
 <div id="err"></div>

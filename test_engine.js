@@ -92,11 +92,9 @@ if (b.yesterday) {
   assert.ok(Math.abs(md.tw.pnl - (34.6 - 35) * 7000) < 1, `平倉的期貨不可計入市場波動，實際 ${md.tw.pnl}`);
 }
 
-// 每日序列 + 今日昨日 + 回撤
+// 每日序列 + 回撤
 const days = E.dailySeries(b.history);
 assert.ok(days.length > 30 && days.every((d, i) => i === 0 || d.day > days[i - 1].day), '日序遞增');
-const ty = E.todayYesterday(b.overview, days);
-assert.ok(ty && isFinite(ty.today), '今日損益');
 const dd = E.drawdownSeries(days, b.overview);
 assert.ok(dd.maxDD <= 0 && dd.maxDD > -1, '最大回撤範圍: ' + dd.maxDD);
 assert.ok(dd.series.length === days.length, '回撤點數（含現在）');
@@ -397,9 +395,66 @@ console.log('   合計', Math.round(sumY).toLocaleString());
     '＝Δ淨值', Math.round(at.dNet).toLocaleString());
 })();
 
+// ---- 投資今日增減（investToday）----
+// 為什麼要有它：「台股今日」只算還抱著的部位，而且刻意跳過數量變動的期貨（部分平倉那天
+// 快照只有總現值、拆不出本金抽離）。轉倉日那筆錢在部位卡上是隱形的，這張卡負責補。
+(function () {
+  const ov = { realized: 1000000, unrealized: -200000 };
+  // history 欄序：[日期, 總資產A12, 已實現, 成本, 市值, 未實現, 月報酬]
+  const H = (iso, realized, unreal) => [new Date(iso), 3000000, realized, 500000, 800000, unreal, 0];
+
+  // 情境一：平常的一天。基準＝今天開盤前最後一筆（06:36 晨拍）
+  const h1 = [
+    H('2026-08-12T22:00:00+08:00', 700000, -150000),
+    H('2026-08-13T06:36:00+08:00', 700000, -180000),
+  ];
+  const r1 = E.investToday(ov, h1, new Date('2026-08-13T14:00:00+08:00'));
+  assert.strictEqual(r1.isToday, true, '情境一：有今日基準');
+  assert.strictEqual(r1.pnl, (1000000 - 200000) - (700000 - 180000), '情境一：損益＝現在(已實現+未實現) − 晨拍');
+
+  // 情境二：轉倉日。已實現跳增、未實現回落——兩者一起看才是真正的當日結果
+  const r2 = E.investToday({ realized: 1032100, unrealized: -180000 }, h1,
+    new Date('2026-08-13T14:00:00+08:00'));
+  assert.strictEqual(r2.pnl, 332100, '情境二：轉倉當天的 33 萬要看得見');
+
+  // 情境三：04:47 補漏班匯入後加拍了一張快照，06:36 才是晨拍 → 要取「開盤前最後一筆」，
+  // 不是「中午前第一筆」（取到 04:47 會把一段凌晨美股行情混進今日）
+  const h3 = [
+    H('2026-08-13T04:47:00+08:00', 700000, -250000),
+    H('2026-08-13T06:36:00+08:00', 700000, -180000),
+  ];
+  const r3 = E.investToday(ov, h3, new Date('2026-08-13T14:00:00+08:00'));
+  assert.strictEqual(r3.pnl, (1000000 - 200000) - (700000 - 180000), '情境三：基準取開盤前最後一筆(06:36)');
+
+  // 情境四：09:00 之後才拍的快照不能當基準（那已經含了今天的行情）
+  const h4 = [
+    H('2026-08-13T06:36:00+08:00', 700000, -180000),
+    H('2026-08-13T13:40:00+08:00', 900000, -190000),
+  ];
+  const r4 = E.investToday(ov, h4, new Date('2026-08-13T22:00:00+08:00'));
+  assert.strictEqual(r4.pnl, (1000000 - 200000) - (700000 - 180000), '情境四：盤中/收盤後的快照不當基準');
+
+  // 情境五：今天開盤前一張快照都沒有（晨拍掛了）→ 退回最近一筆，但要標明不是「今日」，
+  // 卡片會改叫「投資增減」並寫出基準時間，免得把昨夜美股當成今天的成績
+  const r5 = E.investToday(ov, [H('2026-08-12T22:00:00+08:00', 700000, -150000)],
+    new Date('2026-08-13T09:30:00+08:00'));
+  assert.strictEqual(r5.isToday, false, '情境五：沒有今日基準要誠實標示');
+  assert.strictEqual(r5.pnl, (1000000 - 200000) - (700000 - 150000), '情境五：仍給數字，基準是昨晚那筆');
+  assert.ok(r5.baseAt instanceof Date, '情境五：回傳基準時間讓畫面寫得出來');
+
+  // 情境六：完全沒有歷史 → 回 null，畫面顯示「累積中」而不是假的 0
+  assert.strictEqual(E.investToday(ov, [], new Date()), null, '情境六：沒資料回 null');
+
+  // 真實 bundle 跑得動、數字有限
+  const real = E.investToday(b.overview, b.history, new Date(b.generated));
+  assert.ok(real === null || isFinite(real.pnl), '真實資料：投資今日增減算得出來');
+  console.log('   投資今日增減:', real === null ? '（無快照）'
+    : Math.round(real.pnl).toLocaleString() + (real.isToday ? '（今日）' : '（基準 ' + real.baseAt.toLocaleString('zh-TW', { hour12: false }) + '）'));
+})();
+
 console.log('✅ all checks pass');
 console.log('   0050對照終點: 我', cf[cf.length - 1].mine, '| 0050', cf[cf.length - 1].tw, '| 貢獻檔數:', ct.length);
 console.log('   融資餘額(A8):', lc.marginBal, '| 月息:', lc.monthly);
 console.log('   現金:', Math.round(ci.cash), '| 月支出中位:', ci.monthlySpend, '| 可撐:', ci.months.toFixed(1), '月');
 console.log('   風險指標:', (fr.risk * 100).toFixed(0) + '%', '| 距警戒125%:', Math.round(fr.toWarn), '| 保證金使用率:', (fr.marginUtil * 100).toFixed(0) + '%');
-console.log('   前五大:', (cc.top5 * 100).toFixed(0) + '%', '| 最大回撤:', (dd.maxDD * 100).toFixed(1) + '%', '| 今日:', Math.round(ty.today), '| 昨日:', ty.yesterday == null ? '—' : Math.round(ty.yesterday));
+console.log('   前五大:', (cc.top5 * 100).toFixed(0) + '%', '| 最大回撤:', (dd.maxDD * 100).toFixed(1) + '%');

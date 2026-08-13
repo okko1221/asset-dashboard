@@ -21,19 +21,60 @@ const App = (() => {
     localStorage.setItem('dash_cfg', JSON.stringify({ url, token }));
     location.reload();
   }
+  // 「抓對帳單」按鈕：信到了就按，不用等 GitHub 排程那四班（cron 延遲 45~150 分）。
+  // 跟「收工」分工：這顆＝券商對帳單（叫雲端爬蟲去 Gmail 收），收工＝刷卡信＋拍快照。
+  async function fetchNow() {
+    const c = cfg();
+    if (!c) { alert('還沒設定 Apps Script 網址與金鑰，先點「設定」。'); return; }
+    const btn = $('btnFetch');
+    const box = document.createElement('div');
+    box.id = 'fetchBox';
+    box.style.cssText = 'background:var(--navy2);border:1px solid var(--line);border-radius:8px;' +
+      'padding:12px 16px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;font-size:14px';
+    box.textContent = '正在叫爬蟲…';
+    const old = $('fetchBox');
+    if (old) old.remove();
+    $('main').prepend(box);
+    btn.disabled = true;
+    try {
+      const r = await fetch(`${c.url}?run=fetchnow&token=${encodeURIComponent(c.token)}`);
+      const msg = await r.text();
+      box.textContent = msg;
+      // 只有「真的叫動了」才倒數。金鑰沒設、金鑰過期、GitHub 拒絕都是 ❌ 開頭或教學訊息，
+      // 那些情況倒數只會讓人乾等 2 分半再看到一樣的舊數字。
+      if (msg.indexOf('✅') !== 0) { btn.disabled = false; return; }
+      let left = 150;
+      const tick = setInterval(() => {
+        left -= 5;
+        btn.textContent = left + '秒';
+        if (left > 0) return;
+        clearInterval(tick);
+        btn.textContent = '抓對帳單'; btn.disabled = false;
+        load(true).then(() => {   // fresh=1：繞過伺服器快取，確保看到剛進來的對帳單
+          const again = $('fetchBox');
+          if (again) $('main').prepend(again);
+        });
+      }, 5000);
+    } catch (e) {
+      box.textContent = '❌ 叫不動爬蟲：' + e.message +
+        '\n（排程照跑，不會漏帳，最晚明天 04:00 那班會補。）';
+      btn.disabled = false;
+    }
+  }
+
   // 「收工」按鈕：更新完銀行餘額點一下。跑 ?run=recalc（抓對帳單＋拍快照）。
   // 為什麼要做成按鈕：這些 ?run= 指令原本得自己把網址、指令、金鑰拼起來貼到瀏覽器，
   // 對不寫程式的人等於不存在。金鑰本來就存在這台裝置的 localStorage，按鈕直接用。
   async function recalc() {
     const c = cfg();
     if (!c) { alert('還沒設定 Apps Script 網址與金鑰，先點「設定」。'); return; }
-    if (!confirm('要抓一次對帳單並拍一張資產快照嗎？\n\n通常在你剛更新完「帳戶餘額」分頁之後跑。\n可能要等 30～60 秒。')) return;
+    if (!confirm('要收一次刷卡信並拍一張資產快照嗎？\n\n通常在你剛更新完「帳戶餘額」分頁之後跑。\n可能要等 30～60 秒。\n\n（券商對帳單不是這顆——那個按左邊的「抓對帳單」。）')) return;
     const btn = $('btnRecalc');
     const box = document.createElement('div');
     box.id = 'recalcBox';
     box.style.cssText = 'background:var(--navy2);border:1px solid var(--line);border-radius:8px;' +
       'padding:12px 16px;margin-bottom:14px;white-space:pre-wrap;line-height:1.6;font-size:14px';
-    box.textContent = '收工中…（抓對帳單、拍快照，別關頁面）';
+    box.textContent = '收工中…（收刷卡信、拍快照，別關頁面）';
     const old = $('recalcBox');
     if (old) old.remove();
     $('main').prepend(box);
@@ -93,7 +134,7 @@ const App = (() => {
     }
   }
 
-  async function load() {
+  async function load(fresh) {
     const c = cfg();
     const local = ['localhost', '127.0.0.1'].includes(location.hostname);
     if (!c && !local) { $('gate').style.display = 'block'; return; }
@@ -101,7 +142,7 @@ const App = (() => {
     $('loading').style.display = 'block';
     const 有舊的 = c ? 畫快取() : false;   // 本機讀 test_bundle.json，不進快取路徑
     try {
-      const url = c ? `${c.url}?run=data&token=${encodeURIComponent(c.token)}` : 'test_bundle.json'; // 本機開發用真實快照
+      const url = c ? `${c.url}?run=data&token=${encodeURIComponent(c.token)}${fresh ? '&fresh=1' : ''}` : 'test_bundle.json'; // 本機開發用真實快照
       const res = await fetchRetry(url);
       const text = await res.text();
       let b;
@@ -110,6 +151,12 @@ const App = (() => {
       render(b);
       if (c) { try { localStorage.setItem(CACHE_KEY, text); } catch (e) { /* 存不下就算了，不擋畫面 */ } }
       if (!c) testBanner();   // 讀的是測試檔，不標出來會被當成真帳本（2026-07-29 踩過一次）
+      // 伺服器那份 bundle 有 5 分鐘快取：命中 2.7 秒、重算 11 秒。所以先吃快取讓畫面秒開，
+      // 拿到的若不是剛算的，再自己補一次 fresh=1 在背景換成最新——快與新兩件事都要。
+      if (c && !fresh && Date.now() - new Date(b.generated).getTime() > 45000) {
+        $('gen').textContent += '（更新中…）';
+        load(true).catch(() => { /* 背景更新失敗就維持現在畫面，錯誤已在 render 標時間 */ });
+      }
     } catch (e) {
       // Safari 的 "Load failed" / Chrome 的 "Failed to fetch" 對使用者是天書，翻成能行動的話
       const 連不上 = /load failed|failed to fetch|networkerror|abort/i.test(e.message || '');
@@ -162,6 +209,7 @@ const App = (() => {
     const rt = Engine.realizedToday(trades);
     const mh = Engine.marginHealth(b.trades, b.overview.positions, b.overview.margin_debt);
     const mb = Engine.majorBudget(b.major, b.overview.realized);
+    const it = Engine.investToday(b.overview, b.history, new Date(b.generated));
     const mkt = Engine.marketBreakdown(b.overview.positions);
     const mf = Engine.monthFlow(b.monthly_flow);
     const lv = Engine.leverage(b.overview);
@@ -185,6 +233,15 @@ const App = (() => {
         '跟左邊兩張互補、不重疊：台股今日／美股今晚算的是「還抱著的部位漲跌」，這張算的是「已經賣掉入袋的」。\n\n' +
         '對帳單多半晚上 19:50／21:30 那兩班才收得到，所以盤中看到「今日無平倉」也可能只是還沒寄來——副標會顯示最近一次平倉是哪天。'],
       ['未實現損益', `<span class="${cls(b.overview.unrealized)}">${sign(b.overview.unrealized)}</span>`, '已實現 ' + NT(b.overview.realized)],
+      [it && !it.isToday ? '投資增減' : '投資今日增減',
+        it ? `<span class="${cls(it.pnl)}">${sign(it.pnl)}</span>` : '<span style="color:#5c728c;font-size:22px">累積中</span>',
+        it ? (it.isToday ? `基準 ${tfmt(it.baseAt)}（今晨）` : `⚠️ 今晨沒拍到快照<br>基準 ${tfmt(it.baseAt)} 起`) : '要有一張晨間快照才算得出來',
+        '今天投資部位總共多了還是少了多少錢＝（現在的已實現＋未實現）減掉（今天早上快照的已實現＋未實現）。\n\n' +
+        '為什麼要多這一張：「台股今日」算的是「還抱著的部位」漲跌，而且當天有平倉、轉倉的標的會被整檔跳過'
+        + '（快照只存部位總現值，拆不出「平倉把本金抽走」跟「行情漲跌」，寧可少算也不亂算）。'
+        + '所以轉倉那天賺到的錢，在那張卡上是看不見的。這張卡把「已賣掉入袋的」和「還抱著的」加在一起比，不管部位怎麼進出都算得進去。\n\n'
+        + '不含生活收支（薪水、刷卡），純看投資。\n\n'
+        + '⚠️ 早上 06:00 那張快照沒拍成功時，基準會退回上一張，標題也會改成「投資增減」——那時數字含的是「從那個時間點到現在」，不只今天。'],
 
       '部位與風險',
       ['投資市值', NT(b.overview.mv), '成本 ' + NT(b.overview.cost),
@@ -645,5 +702,6 @@ const App = (() => {
     btn.textContent = (open ? '▴ 收合中間 ' : '▾ 展開中間 ') + el.querySelectorAll('tbody tr').length + ' 檔';
   }
 
-  return { saveConfig, reconfig, reload: load, toggleStocks, pickPeriod, recalc };
+  // ↻ 是「我就是要現在最新的」→ 一律繞過伺服器那份 5 分鐘快取
+  return { saveConfig, reconfig, reload: () => load(true), toggleStocks, pickPeriod, recalc, fetchNow };
 })();

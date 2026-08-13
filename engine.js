@@ -301,19 +301,26 @@
     return Object.keys(byDay).sort().map((k) => Object.assign({ day: k }, byDay[k]));
   }
 
-  // ---- 今日 vs 昨日投資損益（快照在每晨 6:00＝前日收盤）----
-  function todayYesterday(overview, days) {
-    if (!days.length) return null;
-    const nowPnl = (+overview.realized || 0) + (+overview.unrealized || 0);
-    const last = days[days.length - 1];
-    const prev = days.length > 1 ? days[days.length - 2] : null;
+  // ---- 投資今日增減 ----
+  // 「台股今日」算的是還抱著的部位漲跌，而且刻意跳過當天數量有變動的期貨（部位快照只存
+  // 總現值，拆不出「平倉把本金抽走」與「行情漲跌」）。所以轉倉／部分平倉的日子，那筆錢
+  // 在部位卡上是隱形的。這張卡改用「已實現＋未實現」一起比，不管部位怎麼變動都算得進去。
+  //
+  // 基準＝今天台股開盤（09:00）前的最後一筆快照。用「最後一筆」而不是「中午前第一筆」：
+  // 04:00 補漏班有匯入時會加拍一張，取到它會把一段凌晨美股行情混進今日。
+  function investToday(overview, history, now) {
+    const t = now || new Date();
+    const rows = (history || []).filter((r) => r[0]).map((r) => ({
+      at: D(r[0]), realized: +r[2] || 0, unreal: +r[5] || 0,
+    })).filter((r) => r.at <= t).sort((a, b) => a.at - b.at);
+    if (!rows.length) return null;
+    const sameDay = (d) => d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+    const todays = rows.filter((r) => sameDay(r.at) && r.at.getHours() < 9);
+    const base = todays.length ? todays[todays.length - 1] : rows[rows.length - 1];
     return {
-      today: nowPnl - (last.realized + last.unreal),
-      todayPct: last.mv > 0 ? (nowPnl - (last.realized + last.unreal)) / last.mv : null,
-      todayBase: last.day, todayBaseAt: last.date,
-      yesterday: prev ? (last.realized + last.unreal) - (prev.realized + prev.unreal) : null,
-      yesterdayBase: prev ? prev.day : null,
-      totalToday: (+overview.net_inc_loan || 0) - last.total,
+      pnl: ((+overview.realized || 0) + (+overview.unrealized || 0)) - (base.realized + base.unreal),
+      baseAt: base.at,
+      isToday: todays.length > 0,
     };
   }
 
@@ -756,7 +763,7 @@
   }
 
   const api = { parseTrades, xirr, stockStats, monthlyPerf, loanCost, expenseMonthly, savingsRate,
-    dailySeries, todayYesterday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
+    dailySeries, investToday, drawdownSeries, allocation, concentration, cashInfo, futuresRisk, holdings, futuresRows,
     contribution, vs0050, marketDaily, realizedToday, marginHealth, majorBudget, marketBreakdown, monthFlow,
     realizedBetween, attribution,
     yearlyPerf, leverage, periodReport };
