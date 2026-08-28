@@ -631,7 +631,11 @@ const App = (() => {
         return merged;
       };
       base.scales = { x: axis(user.x), y: axis(user.y) };
-      base.interaction = { mode: 'index', intersect: false };
+      // mode:'index' 預設用 x 座標找是哪一筆——直向圖對，但橫條圖（indexAxis:'y'）的類別在
+      // y 軸，滑鼠的上下位置會被完全忽略：移到長條旁邊的空白處，浮出框永遠顯示最長／最負的
+      // 那一檔，看起來就像「移到條上沒反應」。axis 要跟著 indexAxis 走。
+      base.interaction = { mode: 'index', intersect: false,
+        axis: (cfg.options || {}).indexAxis === 'y' ? 'y' : 'x' };
     }
     cfg.options = Object.assign({}, cfg.options, base);
     charts[id] = new Chart($(id), cfg);
