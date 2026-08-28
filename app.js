@@ -321,6 +321,11 @@ const App = (() => {
       $('pnlContrib').innerHTML = `<div class="note">資料累積中——每天早上 6:00 存一次部位快照，明天起這裡會顯示每檔的損益貢獻排行（目前 ${histDays.length} 天）。</div>`;
     } else {
       $('contribNote').textContent = `近30天，資料自 ${histDays[0]} 起`;
+      // 上面那個「資料累積中」分支會把 canvas 整個 innerHTML 掉。先畫舊快取（天數不足）
+      // 再畫新資料（天數夠）時就會走到這裡而 canvas 已不存在 → TypeError → 連帶讓下游的
+      // localStorage 寫入跳過，舊快取永遠留著、每次重整都重演。所以這裡自己把它種回來。
+      if (!$('chContrib')) $('pnlContrib').innerHTML = '<div class="chartbox"><canvas id="chContrib"></canvas></div>';
+      $('chContrib').parentElement.style.height = Math.max(300, contrib.length * 22 + 40) + 'px';
       mkChart('chContrib', {
         type: 'bar',
         data: { labels: contrib.map(c => c.item), datasets: [{
@@ -329,7 +334,7 @@ const App = (() => {
           backgroundColor: contrib.map(c => c.pnl >= 0 ? '#e05b5b' : '#3ba272'),
           borderRadius: 4,
         }]},
-        options: { indexAxis: 'y', plugins: { legend: { display: false } } },
+        options: { indexAxis: 'y', plugins: { legend: { display: false } }, scales: { y: { ticks: { autoSkip: false } } } },
       });
     }
 
@@ -620,7 +625,8 @@ const App = (() => {
     if (cfg.type !== 'doughnut') {
       const user = (cfg.options || {}).scales || {};
       const axis = (extra) => {
-        const merged = Object.assign({ ticks: { color: GRAY }, grid: { color: '#22405f' } }, extra || {});
+        const merged = Object.assign({ grid: { color: '#22405f' } }, extra || {});
+        merged.ticks = Object.assign({ color: GRAY }, (extra || {}).ticks);
         if (merged.title) merged.title = Object.assign({ color: GRAY }, merged.title);
         return merged;
       };
